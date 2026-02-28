@@ -1,0 +1,8 @@
+{
+  "plugin_id":   "trakt",
+  "name":        "Trakt",
+  "version":     "1.0.0",
+  "author":      "Michael Beck",
+  "description": "Import watch history, ratings and watchlist from Trakt.tv",
+  "entry_type":  "Chronicle.Plugin.Trakt.TraktImportProvider"
+}
