@@ -1,9 +1,10 @@
 {
-  "plugin_id":   "trakt",
-  "name":        "Trakt",
-  "version":     "1.0.0",
-  "author":      "Michael Beck",
-  "description": "Import watch history, ratings and watchlist from Trakt.tv",
-  "entry_type":  "Chronicle.Plugin.Trakt.TraktImportProvider",
-  "iconUrl":     "https://trakt.tv/favicon.ico"
+  "plugin_id": "chronicle.plugin.trakt",
+  "name": "Trakt",
+  "version": "1.0.0",
+  "author": "thegoddamnbeckster",
+  "description": "Import watch history, ratings, and watchlist from Trakt.tv into Chronicle.",
+  "min_chronicle_version": "0.6.0",
+  "entry_type": "Chronicle.Plugin.Trakt.TraktPlugin",
+  "iconUrl": "https://trakt.tv/favicon.ico"
 }
