@@ -75,3 +75,70 @@ internal record TraktWatchlistItem(
     [property: JsonPropertyName("type")]      string         Type,
     [property: JsonPropertyName("movie")]     TraktMovie?    Movie,
     [property: JsonPropertyName("show")]      TraktShow?     Show);
+
+// ── Search results ────────────────────────────────────────────────────────────
+
+internal record TraktSearchMovie(
+    [property: JsonPropertyName("title")]    string        Title,
+    [property: JsonPropertyName("year")]     int?          Year,
+    [property: JsonPropertyName("ids")]      TraktIds      Ids,
+    [property: JsonPropertyName("overview")] string?       Overview,
+    [property: JsonPropertyName("runtime")]  int?          Runtime,
+    [property: JsonPropertyName("rating")]   double?       Rating,
+    [property: JsonPropertyName("genres")]   List<string>? Genres);
+
+internal record TraktSearchShow(
+    [property: JsonPropertyName("title")]    string        Title,
+    [property: JsonPropertyName("year")]     int?          Year,
+    [property: JsonPropertyName("ids")]      TraktIds      Ids,
+    [property: JsonPropertyName("overview")] string?       Overview,
+    [property: JsonPropertyName("runtime")]  int?          Runtime,
+    [property: JsonPropertyName("rating")]   double?       Rating,
+    [property: JsonPropertyName("genres")]   List<string>? Genres);
+
+internal record TraktSearchResult(
+    [property: JsonPropertyName("type")]  string            Type,
+    [property: JsonPropertyName("score")] double?           Score,
+    [property: JsonPropertyName("movie")] TraktSearchMovie? Movie,
+    [property: JsonPropertyName("show")]  TraktSearchShow?  Show);
+
+// ── Full detail ───────────────────────────────────────────────────────────────
+
+internal record TraktFullMovie(
+    [property: JsonPropertyName("title")]    string        Title,
+    [property: JsonPropertyName("year")]     int?          Year,
+    [property: JsonPropertyName("ids")]      TraktIds      Ids,
+    [property: JsonPropertyName("overview")] string?       Overview,
+    [property: JsonPropertyName("runtime")]  int?          Runtime,
+    [property: JsonPropertyName("rating")]   double?       Rating,
+    [property: JsonPropertyName("genres")]   List<string>? Genres);
+
+internal record TraktFullShow(
+    [property: JsonPropertyName("title")]    string        Title,
+    [property: JsonPropertyName("year")]     int?          Year,
+    [property: JsonPropertyName("ids")]      TraktIds      Ids,
+    [property: JsonPropertyName("overview")] string?       Overview,
+    [property: JsonPropertyName("runtime")]  int?          Runtime,
+    [property: JsonPropertyName("rating")]   double?       Rating,
+    [property: JsonPropertyName("genres")]   List<string>? Genres);
+
+// ── People ────────────────────────────────────────────────────────────────────
+
+internal record TraktPerson(
+    [property: JsonPropertyName("name")] string   Name,
+    [property: JsonPropertyName("ids")]  TraktIds? Ids);
+
+internal record TraktCastMember(
+    [property: JsonPropertyName("character")] string?     Character,
+    [property: JsonPropertyName("person")]    TraktPerson Person);
+
+internal record TraktCrewMember(
+    [property: JsonPropertyName("job")]    string?     Job,
+    [property: JsonPropertyName("person")] TraktPerson Person);
+
+internal record TraktCrew(
+    [property: JsonPropertyName("directing")] List<TraktCrewMember>? Directing);
+
+internal record TraktPeopleResponse(
+    [property: JsonPropertyName("cast")] List<TraktCastMember>? Cast,
+    [property: JsonPropertyName("crew")] TraktCrew?             Crew);

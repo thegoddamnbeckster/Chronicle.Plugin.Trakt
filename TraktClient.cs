@@ -255,5 +255,52 @@ internal sealed class TraktClient : IDisposable
         }
     }
 
+    // ── Metadata endpoints ────────────────────────────────────────────────────
+
+    public async Task<List<TraktSearchResult>> SearchAsync(
+        string type, string query, int? year, CancellationToken ct)
+    {
+        var url = $"/search/{type}?query={Uri.EscapeDataString(query)}&extended=full";
+        if (year.HasValue) url += $"&years={year}";
+
+        using var response = await _http.GetAsync(url, ct);
+        if (!response.IsSuccessStatusCode) return [];
+
+        return await response.Content
+            .ReadFromJsonAsync<List<TraktSearchResult>>(JsonOpts, ct) ?? [];
+    }
+
+    public async Task<TraktFullMovie?> GetMovieAsync(string idOrSlug, CancellationToken ct)
+    {
+        using var response = await _http.GetAsync($"/movies/{idOrSlug}?extended=full", ct);
+        if (!response.IsSuccessStatusCode) return null;
+        return await response.Content.ReadFromJsonAsync<TraktFullMovie>(JsonOpts, ct);
+    }
+
+    public async Task<TraktFullShow?> GetShowAsync(string idOrSlug, CancellationToken ct)
+    {
+        using var response = await _http.GetAsync($"/shows/{idOrSlug}?extended=full", ct);
+        if (!response.IsSuccessStatusCode) return null;
+        return await response.Content.ReadFromJsonAsync<TraktFullShow>(JsonOpts, ct);
+    }
+
+    public async Task<TraktPeopleResponse?> GetPeopleAsync(
+        string pluralType, string idOrSlug, CancellationToken ct)
+    {
+        using var response = await _http.GetAsync($"/{pluralType}/{idOrSlug}/people", ct);
+        if (!response.IsSuccessStatusCode) return null;
+        return await response.Content.ReadFromJsonAsync<TraktPeopleResponse>(JsonOpts, ct);
+    }
+
+    public async Task<bool> MetadataHealthCheckAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var response = await _http.GetAsync("/movies/trending", ct);
+            return response.IsSuccessStatusCode;
+        }
+        catch { return false; }
+    }
+
     public void Dispose() => _http.Dispose();
 }
