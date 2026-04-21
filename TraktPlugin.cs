@@ -178,6 +178,57 @@ public sealed class TraktPlugin : IImportProvider, IDisposable
         return _client.HealthCheckAsync(ct);
     }
 
+    // ── Optional enrichment hooks ─────────────────────────────────────────────
+
+    public async Task<ImportedItemMetadata?> GetItemMetadataAsync(
+        string externalId, string mediaType, CancellationToken ct = default)
+    {
+        EnsureConfigured();
+        var (type, traktId) = ParseTraktId(externalId);
+
+        if (type == "movie")
+        {
+            var m = await _client!.GetMovieAsync(traktId, ct);
+            if (m is null) return null;
+            return new ImportedItemMetadata(
+                m.Title, m.Year, m.Overview, null, m.Runtime,
+                BuildMetadataIds(m.Ids, "movie"));
+        }
+        else
+        {
+            var s = await _client!.GetShowAsync(traktId, ct);
+            if (s is null) return null;
+            return new ImportedItemMetadata(
+                s.Title, s.Year, s.Overview, null, s.Runtime,
+                BuildMetadataIds(s.Ids, "tv"));
+        }
+    }
+
+    public async Task<List<ImportedCredit>> GetCreditsAsync(
+        string externalId, string mediaType, CancellationToken ct = default)
+    {
+        EnsureConfigured();
+        var (type, traktId) = ParseTraktId(externalId);
+        var pluralType = type == "movie" ? "movies" : "shows";
+
+        var people = await _client!.GetPeopleAsync(pluralType, traktId, ct);
+        if (people is null) return [];
+
+        var credits = new List<ImportedCredit>();
+
+        foreach (var actor in people.Cast ?? [])
+            credits.Add(new ImportedCredit(
+                actor.Person.Name, "Actor", actor.Character,
+                BillingOrder: null, ExternalPersonId: actor.Person.Ids?.Trakt?.ToString()));
+
+        foreach (var director in people.Crew?.Directing ?? [])
+            credits.Add(new ImportedCredit(
+                director.Person.Name, "Director", CharacterName: null,
+                BillingOrder: null, ExternalPersonId: director.Person.Ids?.Trakt?.ToString()));
+
+        return credits;
+    }
+
     // ── Mapping: Trakt models → Chronicle plugin models ───────────────────────
 
     private static ImportedWatchEvent? ToWatchEvent(TraktHistoryItem item)
@@ -310,6 +361,33 @@ public sealed class TraktPlugin : IImportProvider, IDisposable
         if (ids.Imdb  is not null) d[$"{prefix}imdb"]  = ids.Imdb;
         if (ids.Tmdb.HasValue)    d[$"{prefix}tmdb"]   = ids.Tmdb.Value.ToString();
         if (ids.Tvdb.HasValue)    d[$"{prefix}tvdb"]   = ids.Tvdb.Value.ToString();
+    }
+
+    /// <summary>
+    /// Parses a Trakt ExternalId of the form "trakt:movie:12345" or "trakt:episode:67890"
+    /// into (type, traktId) — e.g. ("movie", "12345").
+    /// </summary>
+    private static (string Type, string TraktId) ParseTraktId(string externalId)
+    {
+        // Expected formats: "trakt:movie:12345", "trakt:show:67890", "trakt:episode:99999"
+        var parts = externalId.Split(':');
+        if (parts.Length >= 3)
+            return (parts[1], parts[2]);
+        // Fallback: treat the whole thing as an ID
+        return ("movie", externalId);
+    }
+
+    /// <summary>
+    /// Builds an AdditionalIds dictionary with TMDB IDs formatted as "movie:N" or "tv:N"
+    /// so they align with how the TMDB enrichment plugin stores its external IDs.
+    /// </summary>
+    private static Dictionary<string, string> BuildMetadataIds(TraktIds ids, string tmdbPrefix)
+    {
+        var d = new Dictionary<string, string>();
+        if (ids.Tmdb.HasValue)    d["tmdb"] = $"{tmdbPrefix}:{ids.Tmdb}";
+        if (ids.Imdb  is not null) d["imdb"] = ids.Imdb;
+        if (ids.Tvdb.HasValue)    d["tvdb"] = ids.Tvdb.Value.ToString();
+        return d;
     }
 
     private void EnsureConfigured()

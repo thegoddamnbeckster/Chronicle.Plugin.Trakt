@@ -1,10 +1,30 @@
 {
   "plugin_id": "chronicle.plugin.trakt",
   "name": "Trakt",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "thegoddamnbeckster",
   "description": "Import watch history, ratings, and watchlist from Trakt.tv into Chronicle.",
   "min_chronicle_version": "0.6.0",
   "entry_type": "Chronicle.Plugin.Trakt.TraktPlugin",
-  "iconUrl": "https://trakt.tv/favicon.ico"
+  "iconUrl": "https://trakt.tv/favicon.ico",
+  "background_tasks": [
+    {
+      "task_id":                  "import-all",
+      "display_name":             "Import All from Trakt",
+      "description":              "One-time full import of your entire Trakt watch history, ratings, and watchlist.",
+      "default_cron":             "",
+      "default_enabled":          false,
+      "schedulable":              false,
+      "run_confirmation_title":   "Import everything from Trakt?",
+      "run_confirmation_message": "This pulls your full Trakt history and may take several minutes. Existing records will not be duplicated."
+    },
+    {
+      "task_id":         "delta-sync",
+      "display_name":    "Delta Sync",
+      "description":     "Pulls new watch events, ratings, and watchlist changes from Trakt since the last sync.",
+      "default_cron":    "0 2 * * *",
+      "default_enabled": true,
+      "schedulable":     true
+    }
+  ]
 }
