@@ -7,6 +7,8 @@
   "min_chronicle_version": "0.6.0",
   "entry_type": "Chronicle.Plugin.Trakt.TraktPlugin",
   "iconUrl": "https://trakt.tv/favicon.ico",
+  "brandColorLight": "#ed2224",
+  "brandColorDark":  "#c01f21",
   "background_tasks": [
     {
       "task_id":                  "import-all",
