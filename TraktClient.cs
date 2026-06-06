@@ -320,9 +320,17 @@ internal sealed class TraktClient : IDisposable
         try
         {
             using var response = await _http.GetAsync("/movies/trending", ct);
+            if (!response.IsSuccessStatusCode)
+                _log.Warning("Trakt metadata health check failed: HTTP {Status} (client_id prefix: {Prefix})",
+                    (int)response.StatusCode,
+                    _clientId.Length > 8 ? _clientId[..8] + "…" : "(empty)");
             return response.IsSuccessStatusCode;
         }
-        catch { return false; }
+        catch (Exception ex)
+        {
+            _log.Warning(ex, "Trakt metadata health check threw an exception");
+            return false;
+        }
     }
 
     public void Dispose() => _http.Dispose();
