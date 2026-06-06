@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Chronicle.Plugin.Trakt.Models;
+using Serilog;
 
 namespace Chronicle.Plugin.Trakt;
 
@@ -13,6 +14,8 @@ internal sealed class TraktClient : IDisposable
 {
     private const string BaseUrl  = "https://api.trakt.tv";
     private const int    PageSize = 500;
+
+    private static readonly ILogger _log = Log.ForContext<TraktClient>();
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -264,7 +267,12 @@ internal sealed class TraktClient : IDisposable
         if (year.HasValue) url += $"&years={year}";
 
         using var response = await _http.GetAsync(url, ct);
-        if (!response.IsSuccessStatusCode) return [];
+        if (!response.IsSuccessStatusCode)
+        {
+            _log.Warning("Trakt search failed: {Status} for query={Query} type={Type}",
+                (int)response.StatusCode, query, type);
+            return [];
+        }
 
         return await response.Content
             .ReadFromJsonAsync<List<TraktSearchResult>>(JsonOpts, ct) ?? [];
@@ -273,14 +281,22 @@ internal sealed class TraktClient : IDisposable
     public async Task<TraktFullMovie?> GetMovieAsync(string idOrSlug, CancellationToken ct)
     {
         using var response = await _http.GetAsync($"/movies/{idOrSlug}?extended=full", ct);
-        if (!response.IsSuccessStatusCode) return null;
+        if (!response.IsSuccessStatusCode)
+        {
+            _log.Warning("Trakt GetMovie failed: {Status} for id={Id}", (int)response.StatusCode, idOrSlug);
+            return null;
+        }
         return await response.Content.ReadFromJsonAsync<TraktFullMovie>(JsonOpts, ct);
     }
 
     public async Task<TraktFullShow?> GetShowAsync(string idOrSlug, CancellationToken ct)
     {
         using var response = await _http.GetAsync($"/shows/{idOrSlug}?extended=full", ct);
-        if (!response.IsSuccessStatusCode) return null;
+        if (!response.IsSuccessStatusCode)
+        {
+            _log.Warning("Trakt GetShow failed: {Status} for id={Id}", (int)response.StatusCode, idOrSlug);
+            return null;
+        }
         return await response.Content.ReadFromJsonAsync<TraktFullShow>(JsonOpts, ct);
     }
 
