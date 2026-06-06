@@ -7,6 +7,7 @@
   "min_chronicle_version": "0.6.0",
   "entry_type": "Chronicle.Plugin.Trakt.TraktPlugin",
   "iconUrl": "https://trakt.tv/favicon.ico",
+  "fixMatchHint": "Paste a Trakt URL (e.g. https://trakt.tv/movies/fight-club or https://trakt.tv/shows/breaking-bad) or a typed ID (e.g. trakt:movie:348356).",
   "brandColorLight": "#ed2224",
   "brandColorDark":  "#c01f21",
   "background_tasks": [

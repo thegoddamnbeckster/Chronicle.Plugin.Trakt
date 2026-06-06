@@ -132,6 +132,12 @@ public sealed class TraktMetadataProvider : IMetadataProvider
     {
         EnsureConfigured();
 
+        // Normalise Trakt URLs to the internal trakt:{type}:{slug} format.
+        //   https://trakt.tv/movies/fight-club  → trakt:movie:fight-club
+        //   https://trakt.tv/shows/breaking-bad → trakt:show:breaking-bad
+        if (externalId.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            externalId = NormalizeTraktUrl(externalId);
+
         // Format: trakt:{type}:{id|slug}  e.g. "trakt:movie:348356"
         var parts     = externalId.Split(':', 3);
         if (parts.Length < 3)
@@ -198,6 +204,34 @@ public sealed class TraktMetadataProvider : IMetadataProvider
     {
         if (_client is null)
             throw new InvalidOperationException("TraktMetadataProvider has not been configured.");
+    }
+
+    private static string NormalizeTraktUrl(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            throw new ArgumentException($"Invalid Trakt URL: '{url}'");
+
+        if (!uri.Host.Equals("trakt.tv", StringComparison.OrdinalIgnoreCase) &&
+            !uri.Host.EndsWith(".trakt.tv", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException($"URL is not a trakt.tv address: '{url}'");
+
+        // https://trakt.tv/movies/{slug} → trakt:movie:{slug}
+        // https://trakt.tv/shows/{slug}  → trakt:show:{slug}
+        var segments = uri.AbsolutePath.Trim('/').Split('/');
+        if (segments.Length < 2 || string.IsNullOrWhiteSpace(segments[1]))
+            throw new ArgumentException(
+                $"Cannot extract content type and slug from Trakt URL: '{url}'. " +
+                "Expected /movies/{{slug}} or /shows/{{slug}}.");
+
+        var traktType = segments[0].ToLowerInvariant() switch
+        {
+            "movies" => "movie",
+            "shows"  => "show",
+            _ => throw new ArgumentException(
+                $"Unrecognised Trakt content type '{segments[0]}' in URL: '{url}'. " +
+                "Expected /movies/ or /shows/.")
+        };
+        return $"trakt:{traktType}:{segments[1]}";
     }
 
     private static string TraktTypeFor(string? mediaTypeName) =>

@@ -194,13 +194,19 @@ public sealed class TraktPlugin : IImportProvider, IDisposable
                 m.Title, m.Year, m.Overview, null, m.Runtime,
                 BuildMetadataIds(m.Ids, "movie"));
         }
-        else
+        else if (type == "show")
         {
             var s = await _client!.GetShowAsync(traktId, ct);
             if (s is null) return null;
             return new ImportedItemMetadata(
                 s.Title, s.Year, s.Overview, null, s.Runtime,
                 BuildMetadataIds(s.Ids, "tv"));
+        }
+        else
+        {
+            // Episode IDs can't be used to look up metadata directly; the sync
+            // flow always calls with the show's ExternalId for stub creation.
+            return null;
         }
     }
 
@@ -255,7 +261,11 @@ public sealed class TraktPlugin : IImportProvider, IDisposable
                 Title:           FormatEpisodeTitle(item.Show.Title, ep),
                 Year:            item.Show.Year,
                 WatchedAt:       item.WatchedAt,
-                ProgressPercent: 100.0);
+                ProgressPercent: 100.0,
+                ShowExternalId:  $"trakt:show:{item.Show.Ids.Trakt}",
+                ShowTitle:       item.Show.Title,
+                SeasonNumber:    ep.Season,
+                EpisodeNumber:   ep.Number);
         }
 
         return null;   // Unknown type — skip silently.
