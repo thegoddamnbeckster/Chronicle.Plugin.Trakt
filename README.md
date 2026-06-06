@@ -1,32 +1,140 @@
 # Chronicle.Plugin.Trakt
 
-Chronicle import plugin for [Trakt.tv](https://trakt.tv). Imports your watch history, ratings, and watchlist into Chronicle via the Trakt v2 API.
+Trakt.tv import and metadata plugin for [Chronicle](https://github.com/thegoddamnbeckster/Chronicle).
+
+Imports your watch history, ratings, and watchlist from [Trakt.tv](https://trakt.tv) via the Trakt v2 API. Also provides metadata (title, overview, poster, cast) for matched items so Chronicle can enrich them without needing a separate TMDB lookup.
+
+**Plugin ID:** `chronicle.plugin.trakt`
+**Version:** 1.1.0
+**Implements:** `IImportProvider` + `IMetadataProvider`
+**Auth:** Trakt Device Auth (OAuth2 — no password required)
+
+---
+
+## Supported Media Types
+
+| Media Type | Import | Metadata |
+|------------|--------|---------|
+| `movies` | ✓ watch history, ratings, watchlist | ✓ title, overview, year, poster, cast, directors |
+| `tv` (shows + episodes) | ✓ watch history, ratings, watchlist | ✓ title, overview, year, poster |
+
+---
+
+## External ID Format
+
+`trakt:{type}:{id}` — for example:
+
+- `trakt:movie:12345` → a Trakt movie
+- `trakt:show:67890` → a Trakt TV show
+- `trakt:episode:99999` → a Trakt episode
+
+Fix Match accepts full Trakt URLs:
+- `https://trakt.tv/movies/fight-club`
+- `https://trakt.tv/shows/breaking-bad`
+- `https://trakt.tv/shows/breaking-bad/seasons/1/episodes/1`
+
+---
 
 ## Setup
 
-1. Create a Trakt application at <https://trakt.tv/oauth/applications>.
-2. In Chronicle → Plugins, install this plugin and set:
-   - **Client ID** — your application's client ID
-   - **Client Secret** — your application's client secret
-3. Go to Chronicle → Settings → Import → Trakt and start the device auth flow.
-4. Visit the displayed URL, enter the code, and Chronicle will automatically store your access token.
+### Step 1 — Create a Trakt application
 
-## Import
+1. Go to [trakt.tv/oauth/applications](https://trakt.tv/oauth/applications) and click **New Application**.
+2. Give it a name (e.g. "Chronicle") and set the redirect URI to `urn:ietf:wg:oauth:2.0:oob`.
+3. Note your **Client ID** and **Client Secret**.
 
-After authentication, use the Import page to sync:
-- **Watch history** — all movies and episodes you've watched (supports incremental `since` parameter)
-- **Ratings** — all your Trakt ratings (1–10 scale)
-- **Watchlist** — all items on your watchlist (added as *Plan to Watch*)
+### Step 2 — Install the plugin
 
-## Rate limits
+1. In Chronicle → **Plugins**, find Trakt and click **Install**.
+2. Go to **Settings** for the plugin and enter your **Client ID** and **Client Secret**.
+3. Click **Save**.
 
-Trakt allows 1,000 API calls per 5-minute window. The plugin tracks the `X-RateLimit-Remaining` response header and automatically pauses when the window is exhausted to keep imports from being blocked.
+### Step 3 — Authenticate
+
+1. In Chronicle → **Settings → Import → Trakt**, click **Start Authentication**.
+2. Chronicle will display a short code and a URL.
+3. Visit [trakt.tv/activate](https://trakt.tv/activate), sign in, and enter the code.
+4. Chronicle polls for confirmation and stores your access token automatically.
+
+---
+
+## Importing
+
+After authentication, use the Background Tasks page to run:
+
+| Task | What it does |
+|------|-------------|
+| **Import All** | Full import of your entire Trakt history, ratings, and watchlist. Run once after connecting. |
+| **Delta Sync** | Imports only activity since the last sync. Runs automatically on schedule (default: daily 2:00 UTC). |
+
+During import, Chronicle:
+1. Looks up each Trakt item by its TMDB cross-reference ID (stored by Trakt on every item)
+2. Creates or finds the matching Chronicle `MediaItem`
+3. Records watch events, ratings, and library statuses without duplicating existing entries
+
+---
+
+## Rate Limiting
+
+Trakt allows 1,000 API calls per 5-minute window. The plugin reads the `X-RateLimit-Remaining` response header on every call. If it reaches zero, the plugin automatically sleeps until the window resets before continuing — imports never fail due to rate limiting.
+
+HTTP 429 responses with a `Retry-After` header are also handled with automatic backoff.
+
+---
+
+## Repository Structure
+
+```
+Chronicle.Plugin.Trakt/
+├── Chronicle.Plugin.Trakt.csproj
+├── manifest.json
+├── TraktPlugin.cs             # Entry point — registers IMetadataProvider + IImportProvider
+├── TraktMetadataProvider.cs   # IMetadataProvider: search, get by ID, Fix Match
+├── TraktClient.cs             # HTTP client, auth, rate limiting
+└── Models/                    # API response models
+```
+
+---
 
 ## Building
 
-```bash
-dotnet build
-dotnet publish -c Release -o dist/
+```powershell
+dotnet build -c Release
 ```
 
-Copy the contents of `dist/` (including `manifest.json`) into your Chronicle `plugins/` directory.
+Deploy to Chronicle:
+
+```powershell
+$pluginDir = "..\Chronicle\src\Chronicle.API\plugins\chronicle.plugin.trakt"
+New-Item -ItemType Directory -Force $pluginDir
+dotnet build -c Release
+Copy-Item "bin\Release\net9.0\*.dll" $pluginDir
+Copy-Item "manifest.json"           $pluginDir
+```
+
+> **Important:** `Chronicle.Plugins.dll` must **not** be in the plugin directory — Chronicle provides it. The `.csproj` sets `<Private>false</Private>` on the Chronicle.Plugins reference to ensure this.
+
+---
+
+## Development
+
+Both repositories must be cloned as siblings:
+
+```
+<base>\
+  Chronicle\
+  Chronicle.Plugin.Trakt\
+```
+
+The plugin references `Chronicle.Plugins` via a local project reference:
+
+```xml
+<ProjectReference Include="..\Chronicle\src\Chronicle.Plugins\Chronicle.Plugins.csproj"
+                  Private="false" ExcludeAssets="runtime" />
+```
+
+---
+
+## License
+
+MIT
