@@ -68,7 +68,10 @@ internal sealed class TraktClient : IDisposable
             new { client_id = _clientId },
             ct);
 
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException(
+                $"Trakt rejected the device auth request (HTTP {(int)response.StatusCode}). " +
+                "Check that your Client ID is correct and the app is approved at trakt.tv/oauth/applications.");
 
         return await response.Content.ReadFromJsonAsync<DeviceCodeResponse>(JsonOpts, ct)
             ?? throw new InvalidOperationException("Trakt returned null device-code response.");
