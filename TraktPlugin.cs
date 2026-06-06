@@ -29,7 +29,7 @@ public sealed class TraktPlugin : IImportProvider, IDisposable
 
     public string PluginId    => "chronicle.plugin.trakt";
     public string Name        => "Trakt";
-    public string Version     => "1.0.0";
+    public string Version     => "1.1.0";
     public string Author      => "thegoddamnbeckster";
     public string Description => "Import watch history, ratings, and watchlist from Trakt.tv.";
 
@@ -199,7 +199,7 @@ public sealed class TraktPlugin : IImportProvider, IDisposable
             var s = await _client!.GetShowAsync(traktId, ct);
             if (s is null) return null;
             return new ImportedItemMetadata(
-                s.Title, s.Year, s.Overview, null, s.Runtime,
+                s.Title ?? "", s.Year, s.Overview, null, s.Runtime,
                 BuildMetadataIds(s.Ids, "tv"));
         }
         else
@@ -232,6 +232,11 @@ public sealed class TraktPlugin : IImportProvider, IDisposable
                 director.Person.Name, "Director", CharacterName: null,
                 BillingOrder: null, ExternalPersonId: director.Person.Ids?.Trakt?.ToString()));
 
+        foreach (var writer in people.Crew?.Writing ?? [])
+            credits.Add(new ImportedCredit(
+                writer.Person.Name, "Writer", CharacterName: writer.Job,
+                BillingOrder: null, ExternalPersonId: writer.Person.Ids?.Trakt?.ToString()));
+
         return credits;
     }
 
@@ -241,9 +246,10 @@ public sealed class TraktPlugin : IImportProvider, IDisposable
     {
         if (item.Type == "movie" && item.Movie is not null)
         {
+            if (item.Movie.Ids.Trakt is not long movieTraktId) return null;
             return new ImportedWatchEvent(
-                ExternalId:      $"trakt:movie:{item.Movie.Ids.Trakt}",
-                AdditionalIds:   BuildIds(item.Movie.Ids),
+                ExternalId:      $"trakt:movie:{movieTraktId}",
+                AdditionalIds:   BuildIds(item.Movie.Ids, "movie"),
                 MediaType:       "movie",
                 Title:           item.Movie.Title,
                 Year:            item.Movie.Year,
@@ -254,15 +260,17 @@ public sealed class TraktPlugin : IImportProvider, IDisposable
         if (item.Type == "episode" && item.Show is not null && item.Episode is not null)
         {
             var ep = item.Episode;
+            if (ep.Ids.Trakt is not long epTraktId) return null;
+            if (item.Show.Ids.Trakt is not long showTraktId) return null;
             return new ImportedWatchEvent(
-                ExternalId:      $"trakt:episode:{ep.Ids.Trakt}",
-                AdditionalIds:   BuildIds(ep.Ids, item.Show.Ids),
+                ExternalId:      $"trakt:episode:{epTraktId}",
+                AdditionalIds:   BuildIds(ep.Ids, "episode", item.Show.Ids),
                 MediaType:       "tv_episode",
                 Title:           FormatEpisodeTitle(item.Show.Title, ep),
                 Year:            item.Show.Year,
                 WatchedAt:       item.WatchedAt,
                 ProgressPercent: 100.0,
-                ShowExternalId:  $"trakt:show:{item.Show.Ids.Trakt}",
+                ShowExternalId:  $"trakt:show:{showTraktId}",
                 ShowTitle:       item.Show.Title,
                 SeasonNumber:    ep.Season,
                 EpisodeNumber:   ep.Number);
@@ -275,9 +283,10 @@ public sealed class TraktPlugin : IImportProvider, IDisposable
     {
         if (item.Type == "movie" && item.Movie is not null)
         {
+            if (item.Movie.Ids.Trakt is not long movieTraktId) return null;
             return new ImportedRating(
-                ExternalId:    $"trakt:movie:{item.Movie.Ids.Trakt}",
-                AdditionalIds: BuildIds(item.Movie.Ids),
+                ExternalId:    $"trakt:movie:{movieTraktId}",
+                AdditionalIds: BuildIds(item.Movie.Ids, "movie"),
                 MediaType:     "movie",
                 Title:         item.Movie.Title,
                 Year:          item.Movie.Year,
@@ -287,9 +296,10 @@ public sealed class TraktPlugin : IImportProvider, IDisposable
 
         if (item.Type == "show" && item.Show is not null)
         {
+            if (item.Show.Ids.Trakt is not long showTraktId) return null;
             return new ImportedRating(
-                ExternalId:    $"trakt:show:{item.Show.Ids.Trakt}",
-                AdditionalIds: BuildIds(item.Show.Ids),
+                ExternalId:    $"trakt:show:{showTraktId}",
+                AdditionalIds: BuildIds(item.Show.Ids, "show"),
                 MediaType:     "tv",
                 Title:         item.Show.Title,
                 Year:          item.Show.Year,
@@ -300,9 +310,11 @@ public sealed class TraktPlugin : IImportProvider, IDisposable
         if (item.Type == "episode" && item.Show is not null && item.Episode is not null)
         {
             var ep = item.Episode;
+            if (ep.Ids.Trakt is not long epTraktId) return null;
+            if (item.Show.Ids.Trakt is not long showTraktId) return null;
             return new ImportedRating(
-                ExternalId:    $"trakt:episode:{ep.Ids.Trakt}",
-                AdditionalIds: BuildIds(ep.Ids, item.Show.Ids),
+                ExternalId:    $"trakt:episode:{epTraktId}",
+                AdditionalIds: BuildIds(ep.Ids, "episode", item.Show.Ids),
                 MediaType:     "tv_episode",
                 Title:         FormatEpisodeTitle(item.Show.Title, ep),
                 Year:          item.Show.Year,
@@ -317,9 +329,10 @@ public sealed class TraktPlugin : IImportProvider, IDisposable
     {
         if (item.Type == "movie" && item.Movie is not null)
         {
+            if (item.Movie.Ids.Trakt is not long movieTraktId) return null;
             return new ImportedWatchlistEntry(
-                ExternalId:    $"trakt:movie:{item.Movie.Ids.Trakt}",
-                AdditionalIds: BuildIds(item.Movie.Ids),
+                ExternalId:    $"trakt:movie:{movieTraktId}",
+                AdditionalIds: BuildIds(item.Movie.Ids, "movie"),
                 MediaType:     "movie",
                 Title:         item.Movie.Title,
                 Year:          item.Movie.Year,
@@ -328,9 +341,10 @@ public sealed class TraktPlugin : IImportProvider, IDisposable
 
         if (item.Type == "show" && item.Show is not null)
         {
+            if (item.Show.Ids.Trakt is not long showTraktId) return null;
             return new ImportedWatchlistEntry(
-                ExternalId:    $"trakt:show:{item.Show.Ids.Trakt}",
-                AdditionalIds: BuildIds(item.Show.Ids),
+                ExternalId:    $"trakt:show:{showTraktId}",
+                AdditionalIds: BuildIds(item.Show.Ids, "show"),
                 MediaType:     "tv",
                 Title:         item.Show.Title,
                 Year:          item.Show.Year,
@@ -351,26 +365,29 @@ public sealed class TraktPlugin : IImportProvider, IDisposable
     }
 
     /// <summary>
-    /// Builds the AdditionalIds dictionary from a primary (episode/movie) ID set,
-    /// with an optional secondary (show) ID set prefixed with "show_".
+    /// Builds the AdditionalIds dictionary from a primary ID set.
+    /// <paramref name="primaryType"/> is "movie", "show", or "episode" — determines TMDB prefix.
+    /// Show IDs (for episode events) are included with a "show_" prefix and always TV-prefixed.
+    /// TMDB IDs are formatted as "movie:N" or "tv:N" to align with the TMDB enrichment plugin.
     /// </summary>
     private static IReadOnlyDictionary<string, string> BuildIds(
-        TraktIds primary, TraktIds? showIds = null)
+        TraktIds primary, string primaryType, TraktIds? showIds = null)
     {
+        var isMovie = primaryType == "movie";
         var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        AddIds(d, primary, prefix: "");
+        AddIds(d, primary, prefix: "", isMovie: isMovie);
         if (showIds is not null)
-            AddIds(d, showIds, prefix: "show_");
+            AddIds(d, showIds, prefix: "show_", isMovie: false);
         return d;
     }
 
-    private static void AddIds(Dictionary<string, string> d, TraktIds ids, string prefix)
+    private static void AddIds(Dictionary<string, string> d, TraktIds ids, string prefix, bool isMovie)
     {
-        if (ids.Trakt.HasValue)   d[$"{prefix}trakt"] = ids.Trakt.Value.ToString();
+        if (ids.Trakt.HasValue)    d[$"{prefix}trakt"] = ids.Trakt.Value.ToString();
         if (ids.Slug  is not null) d[$"{prefix}slug"]  = ids.Slug;
         if (ids.Imdb  is not null) d[$"{prefix}imdb"]  = ids.Imdb;
-        if (ids.Tmdb.HasValue)    d[$"{prefix}tmdb"]   = ids.Tmdb.Value.ToString();
-        if (ids.Tvdb.HasValue)    d[$"{prefix}tvdb"]   = ids.Tvdb.Value.ToString();
+        if (ids.Tmdb.HasValue)     d[$"{prefix}tmdb"]  = $"{(isMovie ? "movie" : "tv")}:{ids.Tmdb}";
+        if (ids.Tvdb.HasValue)     d[$"{prefix}tvdb"]  = ids.Tvdb.Value.ToString();
     }
 
     /// <summary>

@@ -16,7 +16,7 @@ public sealed class TraktMetadataProvider : IMetadataProvider
 
     public string PluginId => "chronicle.plugin.trakt";
     public string Name     => "Trakt.tv";
-    public string Version  => "1.0.0";
+    public string Version  => "1.1.0";
     public string Author   => "Chronicle Contributors";
 
     // ── State ─────────────────────────────────────────────────────────────────
@@ -117,7 +117,7 @@ public sealed class TraktMetadataProvider : IMetadataProvider
                 ExtendedData   = JsonSerializer.SerializeToElement(new { ids }),
             };
 
-            var (score, reason) = Score(context, title, year, ids.Imdb, ids.Tmdb?.ToString());
+            var (score, reason) = Score(context, title, year);
             if (score >= 40)
                 candidates.Add(new ScoredCandidate(meta, score, reason));
         }
@@ -251,40 +251,53 @@ public sealed class TraktMetadataProvider : IMetadataProvider
         RuntimeMinutes = m.Runtime,
         Rating         = m.Rating,
         Genres         = m.Genres ?? [],
-        ExtendedData   = JsonSerializer.SerializeToElement(new { ids = m.Ids }),
+        ExtendedData   = JsonSerializer.SerializeToElement(new
+        {
+            ids           = m.Ids,
+            tagline       = m.Tagline,
+            certification = m.Certification,
+            status        = m.Status,
+            released      = m.Released,
+            country       = m.Country,
+            language      = m.Language,
+            trailer       = m.Trailer,
+            homepage      = m.Homepage,
+        }),
     };
 
     private static MediaMetadata ShowToMetadata(TraktFullShow s, string externalId) => new()
     {
         ExternalId     = externalId,
         Source         = "trakt",
-        Title          = s.Title,
+        Title          = s.Title ?? "",
         Overview       = s.Overview,
         Year           = s.Year,
         RuntimeMinutes = s.Runtime,
         Rating         = s.Rating,
         Genres         = s.Genres ?? [],
-        ExtendedData   = JsonSerializer.SerializeToElement(new { ids = s.Ids }),
+        ExtendedData   = JsonSerializer.SerializeToElement(new
+        {
+            ids            = s.Ids,
+            certification  = s.Certification,
+            network        = s.Network,
+            status         = s.Status,
+            first_aired    = s.FirstAired,
+            airs           = s.Airs,
+            country        = s.Country,
+            language       = s.Language,
+            trailer        = s.Trailer,
+            homepage       = s.Homepage,
+            aired_episodes = s.AiredEpisodes,
+        }),
     };
 
     private static (int Score, string Reason) Score(
         MediaSearchContext ctx,
         string candidateTitle,
-        int? candidateYear,
-        string? imdbId,
-        string? tmdbId)
+        int? candidateYear)
     {
         var score = 0;
         var parts = new List<string>();
-
-        if (imdbId is not null && ctx.Name.Contains(imdbId, StringComparison.OrdinalIgnoreCase))
-        {
-            score += 100; parts.Add("imdb-id-match");
-        }
-        if (tmdbId is not null && ctx.Name.Contains(tmdbId, StringComparison.OrdinalIgnoreCase))
-        {
-            score += 100; parts.Add("tmdb-id-match");
-        }
 
         var ctxNorm = Normalise(ctx.Name);
         var canNorm = Normalise(candidateTitle);

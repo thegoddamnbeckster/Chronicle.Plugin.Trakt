@@ -195,7 +195,11 @@ internal sealed class TraktClient : IDisposable
             using var response = await _http.SendAsync(req, ct);
 
             if (!response.IsSuccessStatusCode)
+            {
+                _log.Warning("Trakt GetWatchHistory failed: {Status} (page {Page})",
+                    (int)response.StatusCode, page);
                 break;
+            }
 
             var items = await response.Content
                 .ReadFromJsonAsync<List<TraktHistoryItem>>(JsonOpts, ct);
