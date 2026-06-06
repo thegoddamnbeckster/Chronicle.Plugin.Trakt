@@ -209,6 +209,14 @@ internal sealed class TraktClient : IDisposable
 
             if (!response.IsSuccessStatusCode)
             {
+                if ((int)response.StatusCode == 429)
+                {
+                    var wait = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(30);
+                    _log.Warning("Trakt rate-limited on history (page {Page}); waiting {Seconds}s",
+                        page, (int)wait.TotalSeconds);
+                    await Task.Delay(wait, ct);
+                    continue;   // retry same page
+                }
                 _log.Warning("Trakt GetWatchHistory failed: {Status} (page {Page})",
                     (int)response.StatusCode, page);
                 break;
@@ -250,6 +258,14 @@ internal sealed class TraktClient : IDisposable
 
             if (!response.IsSuccessStatusCode)
             {
+                if ((int)response.StatusCode == 429)
+                {
+                    var wait = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(30);
+                    _log.Warning("Trakt rate-limited on ratings (page {Page}); waiting {Seconds}s",
+                        page, (int)wait.TotalSeconds);
+                    await Task.Delay(wait, ct);
+                    continue;
+                }
                 _log.Warning("Trakt GetRatings failed: {Status} (page {Page})",
                     (int)response.StatusCode, page);
                 break;
@@ -286,6 +302,14 @@ internal sealed class TraktClient : IDisposable
 
             if (!response.IsSuccessStatusCode)
             {
+                if ((int)response.StatusCode == 429)
+                {
+                    var wait = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(30);
+                    _log.Warning("Trakt rate-limited on watchlist (page {Page}); waiting {Seconds}s",
+                        page, (int)wait.TotalSeconds);
+                    await Task.Delay(wait, ct);
+                    continue;
+                }
                 _log.Warning("Trakt GetWatchlist failed: {Status} (page {Page})",
                     (int)response.StatusCode, page);
                 break;
@@ -342,11 +366,11 @@ internal sealed class TraktClient : IDisposable
         var url = $"/search/{type}?query={Uri.EscapeDataString(query)}&extended=full";
         if (year.HasValue) url += $"&years={year}";
 
-        using var response = await _http.GetAsync(url, ct);
-        if (!response.IsSuccessStatusCode)
+        using var response = await GetWithRetryAsync(url, ct);
+        if (response is null || !response.IsSuccessStatusCode)
         {
             _log.Warning("Trakt search failed: {Status} for query={Query} type={Type}",
-                (int)response.StatusCode, query, type);
+                (int?)response?.StatusCode ?? 0, query, type);
             return [];
         }
 
@@ -356,10 +380,11 @@ internal sealed class TraktClient : IDisposable
 
     public async Task<TraktFullMovie?> GetMovieAsync(string idOrSlug, CancellationToken ct)
     {
-        using var response = await _http.GetAsync($"/movies/{idOrSlug}?extended=full", ct);
-        if (!response.IsSuccessStatusCode)
+        using var response = await GetWithRetryAsync($"/movies/{idOrSlug}?extended=full", ct);
+        if (response is null || !response.IsSuccessStatusCode)
         {
-            _log.Warning("Trakt GetMovie failed: {Status} for id={Id}", (int)response.StatusCode, idOrSlug);
+            _log.Warning("Trakt GetMovie failed: {Status} for id={Id}",
+                (int?)response?.StatusCode ?? 0, idOrSlug);
             return null;
         }
         return await response.Content.ReadFromJsonAsync<TraktFullMovie>(JsonOpts, ct);
@@ -367,10 +392,11 @@ internal sealed class TraktClient : IDisposable
 
     public async Task<TraktFullShow?> GetShowAsync(string idOrSlug, CancellationToken ct)
     {
-        using var response = await _http.GetAsync($"/shows/{idOrSlug}?extended=full", ct);
-        if (!response.IsSuccessStatusCode)
+        using var response = await GetWithRetryAsync($"/shows/{idOrSlug}?extended=full", ct);
+        if (response is null || !response.IsSuccessStatusCode)
         {
-            _log.Warning("Trakt GetShow failed: {Status} for id={Id}", (int)response.StatusCode, idOrSlug);
+            _log.Warning("Trakt GetShow failed: {Status} for id={Id}",
+                (int?)response?.StatusCode ?? 0, idOrSlug);
             return null;
         }
         return await response.Content.ReadFromJsonAsync<TraktFullShow>(JsonOpts, ct);
@@ -379,9 +405,36 @@ internal sealed class TraktClient : IDisposable
     public async Task<TraktPeopleResponse?> GetPeopleAsync(
         string pluralType, string idOrSlug, CancellationToken ct)
     {
-        using var response = await _http.GetAsync($"/{pluralType}/{idOrSlug}/people", ct);
-        if (!response.IsSuccessStatusCode) return null;
+        using var response = await GetWithRetryAsync($"/{pluralType}/{idOrSlug}/people", ct);
+        if (response is null || !response.IsSuccessStatusCode) return null;
         return await response.Content.ReadFromJsonAsync<TraktPeopleResponse>(JsonOpts, ct);
+    }
+
+    /// <summary>
+    /// GET with one automatic retry on HTTP 429, respecting the Retry-After header.
+    /// </summary>
+    private async Task<HttpResponseMessage?> GetWithRetryAsync(string url, CancellationToken ct)
+    {
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var response = await _http.GetAsync(url, ct);
+            if (response.IsSuccessStatusCode)
+                return response;
+
+            if ((int)response.StatusCode == 429 && attempt == 0)
+            {
+                var wait = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(30);
+                _log.Warning("Trakt rate-limited (429); waiting {Seconds}s before retry",
+                    (int)wait.TotalSeconds);
+                response.Dispose();
+                await Task.Delay(wait, ct);
+                continue;
+            }
+
+            return response;
+        }
+
+        return null;
     }
 
     public async Task<bool> MetadataHealthCheckAsync(CancellationToken ct)
