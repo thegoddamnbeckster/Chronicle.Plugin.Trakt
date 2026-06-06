@@ -51,7 +51,7 @@ public sealed class TraktMetadataProvider : IMetadataProvider
             throw new InvalidOperationException("Trakt plugin requires 'client_id' to be configured.");
 
         // clientSecret is only needed for OAuth; pass empty string for metadata-only use.
-        _client = new TraktClient(clientId, string.Empty);
+        _client = new TraktClient(clientId.Trim(), string.Empty);
     }
 
     // ── MediaTypeSupport ──────────────────────────────────────────────────────

@@ -70,8 +70,8 @@ public sealed class TraktPlugin : IImportProvider, IDisposable
     {
         _client?.Dispose();
 
-        var clientId     = settings.GetValueOrDefault("client_id",     "");
-        var clientSecret = settings.GetValueOrDefault("client_secret", "");
+        var clientId     = settings.GetValueOrDefault("client_id",     "").Trim();
+        var clientSecret = settings.GetValueOrDefault("client_secret", "").Trim();
 
         _client = new TraktClient(clientId, clientSecret);
 
