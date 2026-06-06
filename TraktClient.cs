@@ -61,6 +61,12 @@ internal sealed class TraktClient : IDisposable
     public string? RefreshToken   => _refreshToken;
     public long    TokenExpiresAt => _tokenExpiresAt;
 
+    /// <summary>
+    /// Fired when a silent token refresh succeeds, with (accessToken, refreshToken, expiresAt).
+    /// The host should persist these values so the refreshed token survives a restart.
+    /// </summary>
+    public event Action<string, string, long>? TokensRefreshed;
+
     // ── Device auth flow ──────────────────────────────────────────────────────
 
     public async Task<DeviceCodeResponse> InitiateDeviceAuthAsync(CancellationToken ct)
@@ -140,6 +146,7 @@ internal sealed class TraktClient : IDisposable
             _accessToken    = token.AccessToken;
             _refreshToken   = token.RefreshToken;
             _tokenExpiresAt = token.CreatedAt + token.ExpiresIn;
+            TokensRefreshed?.Invoke(_accessToken, _refreshToken, _tokenExpiresAt);
             return true;
         }
         catch
@@ -179,7 +186,7 @@ internal sealed class TraktClient : IDisposable
     // ── Data endpoints ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Returns the full watch history, paginating automatically.
+    /// Returns the full watch history, paginating via X-Pagination-Page-Count headers.
     /// <paramref name="since"/> restricts results to events after that timestamp.
     /// </summary>
     public async Task<List<TraktHistoryItem>> GetWatchHistoryAsync(
@@ -187,10 +194,11 @@ internal sealed class TraktClient : IDisposable
     {
         await EnsureTokenAsync(ct);
 
-        var all  = new List<TraktHistoryItem>();
-        var page = 1;
+        var all      = new List<TraktHistoryItem>();
+        var page     = 1;
+        var pageCount = 1;
 
-        while (true)
+        do
         {
             var url = since.HasValue
                 ? $"/sync/history?limit={PageSize}&page={page}&start_at={Uri.EscapeDataString(since.Value.ToString("O"))}"
@@ -206,6 +214,9 @@ internal sealed class TraktClient : IDisposable
                 break;
             }
 
+            if (page == 1)
+                pageCount = ReadPageCount(response);
+
             var items = await response.Content
                 .ReadFromJsonAsync<List<TraktHistoryItem>>(JsonOpts, ct);
 
@@ -214,12 +225,12 @@ internal sealed class TraktClient : IDisposable
 
             all.AddRange(items);
 
-            if (items.Count < PageSize)
-                break;   // Reached the last page.
+            if (page < pageCount)
+                await Task.Delay(100, ct);   // Be respectful of Trakt's rate limits.
 
             page++;
-            await Task.Delay(100, ct);   // Be respectful of Trakt's rate limits.
         }
+        while (page <= pageCount);
 
         return all;
     }
@@ -228,24 +239,80 @@ internal sealed class TraktClient : IDisposable
     {
         await EnsureTokenAsync(ct);
 
-        using var req      = AuthGet("/sync/ratings");
-        using var response = await _http.SendAsync(req, ct);
-        response.EnsureSuccessStatusCode();
+        var all      = new List<TraktRatingItem>();
+        var page     = 1;
+        var pageCount = 1;
 
-        return await response.Content
-            .ReadFromJsonAsync<List<TraktRatingItem>>(JsonOpts, ct) ?? [];
+        do
+        {
+            using var req      = AuthGet($"/sync/ratings?limit={PageSize}&page={page}");
+            using var response = await _http.SendAsync(req, ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _log.Warning("Trakt GetRatings failed: {Status} (page {Page})",
+                    (int)response.StatusCode, page);
+                break;
+            }
+
+            if (page == 1)
+                pageCount = ReadPageCount(response);
+
+            var items = await response.Content
+                .ReadFromJsonAsync<List<TraktRatingItem>>(JsonOpts, ct);
+
+            if (items is null || items.Count == 0) break;
+            all.AddRange(items);
+            if (page < pageCount) await Task.Delay(100, ct);
+            page++;
+        }
+        while (page <= pageCount);
+
+        return all;
     }
 
     public async Task<List<TraktWatchlistItem>> GetWatchlistAsync(CancellationToken ct)
     {
         await EnsureTokenAsync(ct);
 
-        using var req      = AuthGet("/sync/watchlist");
-        using var response = await _http.SendAsync(req, ct);
-        response.EnsureSuccessStatusCode();
+        var all      = new List<TraktWatchlistItem>();
+        var page     = 1;
+        var pageCount = 1;
 
-        return await response.Content
-            .ReadFromJsonAsync<List<TraktWatchlistItem>>(JsonOpts, ct) ?? [];
+        do
+        {
+            using var req      = AuthGet($"/sync/watchlist?limit={PageSize}&page={page}");
+            using var response = await _http.SendAsync(req, ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _log.Warning("Trakt GetWatchlist failed: {Status} (page {Page})",
+                    (int)response.StatusCode, page);
+                break;
+            }
+
+            if (page == 1)
+                pageCount = ReadPageCount(response);
+
+            var items = await response.Content
+                .ReadFromJsonAsync<List<TraktWatchlistItem>>(JsonOpts, ct);
+
+            if (items is null || items.Count == 0) break;
+            all.AddRange(items);
+            if (page < pageCount) await Task.Delay(100, ct);
+            page++;
+        }
+        while (page <= pageCount);
+
+        return all;
+    }
+
+    private static int ReadPageCount(HttpResponseMessage response)
+    {
+        if (response.Headers.TryGetValues("X-Pagination-Page-Count", out var vals)
+            && int.TryParse(vals.FirstOrDefault(), out var n) && n > 0)
+            return n;
+        return 1;
     }
 
     /// <summary>Verifies the access token is valid by calling /users/me.</summary>

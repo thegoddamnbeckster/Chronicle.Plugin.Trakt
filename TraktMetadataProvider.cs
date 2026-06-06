@@ -23,6 +23,8 @@ public sealed class TraktMetadataProvider : IMetadataProvider
 
     private TraktClient? _client;
 
+    private static readonly HttpClient _imageHttp = new();
+
     public TraktMetadataProvider() { }
 
     internal TraktMetadataProvider(TraktClient client) => _client = client;
@@ -117,8 +119,8 @@ public sealed class TraktMetadataProvider : IMetadataProvider
                 ExtendedData   = JsonSerializer.SerializeToElement(new { ids }),
             };
 
-            var (score, reason) = Score(context, title, year);
-            if (score >= 40)
+            var (score, reason) = Score(context, title, year, result.Score);
+            if (score >= 30)
                 candidates.Add(new ScoredCandidate(meta, score, reason));
         }
 
@@ -184,11 +186,8 @@ public sealed class TraktMetadataProvider : IMetadataProvider
 
     // ── Image proxy ───────────────────────────────────────────────────────────
 
-    public async Task<byte[]> GetImageAsync(string url, CancellationToken ct = default)
-    {
-        using var http = new HttpClient();
-        return await http.GetByteArrayAsync(url, ct);
-    }
+    public Task<byte[]> GetImageAsync(string url, CancellationToken ct = default) =>
+        _imageHttp.GetByteArrayAsync(url, ct);
 
     // ── Health check ──────────────────────────────────────────────────────────
 
@@ -294,10 +293,18 @@ public sealed class TraktMetadataProvider : IMetadataProvider
     private static (int Score, string Reason) Score(
         MediaSearchContext ctx,
         string candidateTitle,
-        int? candidateYear)
+        int? candidateYear,
+        double? traktScore = null)
     {
         var score = 0;
         var parts = new List<string>();
+
+        // Blend Trakt's own relevance score (0–1000 range) as a tiebreaker (max 20 pts).
+        if (traktScore.HasValue)
+        {
+            var bonus = (int)Math.Round(traktScore.Value / 50.0); // 1000 → 20
+            if (bonus > 0) { score += Math.Min(bonus, 20); parts.Add($"trakt-score({traktScore:F0})"); }
+        }
 
         var ctxNorm = Normalise(ctx.Name);
         var canNorm = Normalise(candidateTitle);

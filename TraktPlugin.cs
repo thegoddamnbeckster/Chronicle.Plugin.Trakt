@@ -24,6 +24,7 @@ namespace Chronicle.Plugin.Trakt;
 public sealed class TraktPlugin : IImportProvider, IDisposable
 {
     private TraktClient? _client;
+    private volatile Dictionary<string, string>? _pendingSettingsUpdate;
 
     // ── IImportProvider identity ──────────────────────────────────────────────
 
@@ -74,6 +75,13 @@ public sealed class TraktPlugin : IImportProvider, IDisposable
         var clientSecret = settings.GetValueOrDefault("client_secret", "").Trim();
 
         _client = new TraktClient(clientId, clientSecret);
+        _client.TokensRefreshed += (at, rt, ex) =>
+            _pendingSettingsUpdate = new Dictionary<string, string>
+            {
+                ["access_token"]     = at,
+                ["refresh_token"]    = rt,
+                ["token_expires_at"] = ex.ToString()
+            };
 
         // Restore persisted OAuth tokens if present.
         if (settings.TryGetValue("access_token",     out var at)  &&
@@ -178,6 +186,13 @@ public sealed class TraktPlugin : IImportProvider, IDisposable
         return _client.HealthCheckAsync(ct);
     }
 
+    public IReadOnlyDictionary<string, string>? GetRefreshedSettings()
+    {
+        var s = _pendingSettingsUpdate;
+        _pendingSettingsUpdate = null;
+        return s;
+    }
+
     // ── Optional enrichment hooks ─────────────────────────────────────────────
 
     public async Task<ImportedItemMetadata?> GetItemMetadataAsync(
@@ -215,8 +230,11 @@ public sealed class TraktPlugin : IImportProvider, IDisposable
     {
         EnsureConfigured();
         var (type, traktId) = ParseTraktId(externalId);
-        var pluralType = type == "movie" ? "movies" : "shows";
 
+        // Trakt has no /episodes/{id}/people endpoint — credits are show-level only.
+        if (type == "episode") return [];
+
+        var pluralType = type == "movie" ? "movies" : "shows";
         var people = await _client!.GetPeopleAsync(pluralType, traktId, ct);
         if (people is null) return [];
 
@@ -366,27 +384,30 @@ public sealed class TraktPlugin : IImportProvider, IDisposable
 
     /// <summary>
     /// Builds the AdditionalIds dictionary from a primary ID set.
-    /// <paramref name="primaryType"/> is "movie", "show", or "episode" — determines TMDB prefix.
-    /// Show IDs (for episode events) are included with a "show_" prefix and always TV-prefixed.
-    /// TMDB IDs are formatted as "movie:N" or "tv:N" to align with the TMDB enrichment plugin.
+    /// <paramref name="primaryType"/> is "movie", "show", or "episode".
+    /// TMDB IDs are formatted as "movie:N" / "tv:N" to align with the TMDB enrichment plugin.
+    /// Episode-level TMDB IDs are omitted — they are episode-scoped and would mislead the
+    /// orchestrator's cross-reference lookup into matching a show item by episode ID.
+    /// The parent show's TMDB ID is stored separately under the "show_tmdb" key.
     /// </summary>
     private static IReadOnlyDictionary<string, string> BuildIds(
         TraktIds primary, string primaryType, TraktIds? showIds = null)
     {
-        var isMovie = primaryType == "movie";
         var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        AddIds(d, primary, prefix: "", isMovie: isMovie);
+        AddIds(d, primary, prefix: "", primaryType);
         if (showIds is not null)
-            AddIds(d, showIds, prefix: "show_", isMovie: false);
+            AddIds(d, showIds, prefix: "show_", "show");
         return d;
     }
 
-    private static void AddIds(Dictionary<string, string> d, TraktIds ids, string prefix, bool isMovie)
+    private static void AddIds(Dictionary<string, string> d, TraktIds ids, string prefix, string mediaType)
     {
         if (ids.Trakt.HasValue)    d[$"{prefix}trakt"] = ids.Trakt.Value.ToString();
         if (ids.Slug  is not null) d[$"{prefix}slug"]  = ids.Slug;
         if (ids.Imdb  is not null) d[$"{prefix}imdb"]  = ids.Imdb;
-        if (ids.Tmdb.HasValue)     d[$"{prefix}tmdb"]  = $"{(isMovie ? "movie" : "tv")}:{ids.Tmdb}";
+        // Episode-level TMDB IDs are not cross-referenceable at the show/movie level — skip them.
+        if (ids.Tmdb.HasValue && mediaType != "episode")
+            d[$"{prefix}tmdb"] = $"{(mediaType == "movie" ? "movie" : "tv")}:{ids.Tmdb}";
         if (ids.Tvdb.HasValue)     d[$"{prefix}tvdb"]  = ids.Tvdb.Value.ToString();
     }
 
