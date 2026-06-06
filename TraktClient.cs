@@ -42,6 +42,8 @@ internal sealed class TraktClient : IDisposable
         _http.DefaultRequestHeaders.Add("trakt-api-key", clientId);
         _http.DefaultRequestHeaders.Accept
              .Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        _http.DefaultRequestHeaders.UserAgent
+             .ParseAdd("Mozilla/5.0 (compatible; Chronicle/1.0)");
     }
 
     // ── Token management ─────────────────────────────────────────────────────
