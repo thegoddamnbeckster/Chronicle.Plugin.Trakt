@@ -1,5 +1,7 @@
 # Chronicle.Plugin.Trakt
 
+[![Latest Release](https://img.shields.io/github/v/release/thegoddamnbeckster/Chronicle.Plugin.Trakt?label=Chronicle.Plugin.Trakt&color=ed1c24)](https://github.com/thegoddamnbeckster/Chronicle.Plugin.Trakt/releases/latest)
+
 Trakt.tv import and metadata plugin for [Chronicle](https://github.com/thegoddamnbeckster/Chronicle).
 
 Imports your watch history, ratings, and watchlist from [Trakt.tv](https://trakt.tv) via the Trakt v2 API. Also provides metadata (title, overview, poster, cast) for matched items so Chronicle can enrich them without needing a separate TMDB lookup.
