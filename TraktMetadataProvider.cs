@@ -56,6 +56,11 @@ public sealed class TraktMetadataProvider : IMetadataProvider
         _client = new TraktClient(clientId.Trim(), string.Empty);
     }
 
+    // ── Cross-reference capabilities ─────────────────────────────────────────
+
+    public IReadOnlyList<string> GetAcceptedCrossRefPrefixes() =>
+        ["imdb:", "tv:", "movie:"];
+
     // ── MediaTypeSupport ──────────────────────────────────────────────────────
 
     public MediaTypeSupport[] GetSupportedMediaTypes() =>
@@ -139,6 +144,39 @@ public sealed class TraktMetadataProvider : IMetadataProvider
         //   https://trakt.tv/shows/breaking-bad → trakt:show:breaking-bad
         if (externalId.StartsWith("http", StringComparison.OrdinalIgnoreCase))
             externalId = NormalizeTraktUrl(externalId);
+
+        // Handle cross-reference IDs from other plugins:
+        //   imdb:{imdbId}  → look up via /search/imdb/{id}
+        //   tv:{tmdbId}    → look up via /search/tmdb/{id}?type=show
+        //   movie:{tmdbId} → look up via /search/tmdb/{id}?type=movie
+        if (externalId.StartsWith("imdb:", StringComparison.OrdinalIgnoreCase))
+        {
+            var imdbId = externalId[5..];
+            var hit    = await _client!.SearchByIdAsync("imdb", imdbId, null, ct);
+            var ids    = hit?.Movie?.Ids ?? hit?.Show?.Ids;
+            if (ids?.Trakt is not long traktIdImdb)
+                throw new KeyNotFoundException($"Trakt could not resolve {externalId}.");
+            var imdbType = hit!.Type == "movie" ? "movie" : "show";
+            externalId = $"trakt:{imdbType}:{traktIdImdb}";
+        }
+        else if (externalId.StartsWith("tv:", StringComparison.OrdinalIgnoreCase))
+        {
+            var tmdbId = externalId[3..];
+            var hit    = await _client!.SearchByIdAsync("tmdb", tmdbId, "show", ct);
+            var ids    = hit?.Show?.Ids;
+            if (ids?.Trakt is not long traktIdTv)
+                throw new KeyNotFoundException($"Trakt could not resolve {externalId}.");
+            externalId = $"trakt:show:{traktIdTv}";
+        }
+        else if (externalId.StartsWith("movie:", StringComparison.OrdinalIgnoreCase))
+        {
+            var tmdbId = externalId[6..];
+            var hit    = await _client!.SearchByIdAsync("tmdb", tmdbId, "movie", ct);
+            var ids    = hit?.Movie?.Ids;
+            if (ids?.Trakt is not long traktIdMovie)
+                throw new KeyNotFoundException($"Trakt could not resolve {externalId}.");
+            externalId = $"trakt:movie:{traktIdMovie}";
+        }
 
         // Format: trakt:{type}:{id|slug}  e.g. "trakt:movie:348356"
         var parts     = externalId.Split(':', 3);

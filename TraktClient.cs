@@ -378,6 +378,24 @@ internal sealed class TraktClient : IDisposable
             .ReadFromJsonAsync<List<TraktSearchResult>>(JsonOpts, ct) ?? [];
     }
 
+    /// <summary>
+    /// Looks up a Trakt item by a foreign ID (IMDB or TMDB).
+    /// <paramref name="idSource"/> should be "imdb" or "tmdb".
+    /// Returns the first matching result, or null when not found.
+    /// </summary>
+    public async Task<TraktSearchResult?> SearchByIdAsync(
+        string idSource, string idValue, string? mediaType, CancellationToken ct)
+    {
+        var url = $"/search/{idSource}/{Uri.EscapeDataString(idValue)}?extended=full";
+        if (mediaType is not null) url += $"&type={mediaType}";
+
+        using var response = await GetWithRetryAsync(url, ct);
+        if (response is null || !response.IsSuccessStatusCode) return null;
+        var results = await response.Content
+            .ReadFromJsonAsync<List<TraktSearchResult>>(JsonOpts, ct);
+        return results?.FirstOrDefault();
+    }
+
     public async Task<TraktFullMovie?> GetMovieAsync(string idOrSlug, CancellationToken ct)
     {
         using var response = await GetWithRetryAsync($"/movies/{idOrSlug}?extended=full", ct);
