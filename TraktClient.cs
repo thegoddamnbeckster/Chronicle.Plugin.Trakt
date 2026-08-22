@@ -38,8 +38,13 @@ internal sealed class TraktClient : IDisposable
         _clientSecret = clientSecret;
         _http         = httpClient ?? new HttpClient { BaseAddress = new Uri(BaseUrl) };
 
-        _http.DefaultRequestHeaders.Add("trakt-api-version", "2");
-        _http.DefaultRequestHeaders.Add("trakt-api-key", clientId);
+        // TryAddWithoutValidation, not Add: Add() runs strict RFC-token validation on the
+        // header VALUE for unknown/custom headers, and throws FormatException for content
+        // a pasted API key can plausibly contain (e.g. a stray copied character outside the
+        // narrow token grammar) — which previously surfaced as an unhandled 500 when saving
+        // plugin settings, even though the settings themselves had already saved successfully.
+        _http.DefaultRequestHeaders.TryAddWithoutValidation("trakt-api-version", "2");
+        _http.DefaultRequestHeaders.TryAddWithoutValidation("trakt-api-key", clientId);
         _http.DefaultRequestHeaders.Accept
              .Add(new MediaTypeWithQualityHeaderValue("application/json"));
         _http.DefaultRequestHeaders.UserAgent
@@ -461,10 +466,27 @@ internal sealed class TraktClient : IDisposable
         {
             using var response = await _http.GetAsync("/movies/trending", ct);
             if (!response.IsSuccessStatusCode)
+            {
                 _log.Warning("Trakt metadata health check failed: HTTP {Status} (client_id prefix: {Prefix})",
                     (int)response.StatusCode,
                     _clientId.Length > 8 ? _clientId[..8] + "…" : "(empty)");
+
+                // /movies/trending needs no user OAuth -- only a valid client_id -- so a 401/403
+                // here means Trakt itself is rejecting the configured client_id (revoked, wrong,
+                // or the Trakt API application was disabled), not "not authenticated". Throwing
+                // instead of returning false lets PluginService.HealthCheckAsync's own exception
+                // classifier surface that specific, actionable reason instead of the generic
+                // "Health check returned unhealthy." every other transient failure falls back to.
+                if ((int)response.StatusCode is 401 or 403)
+                    throw new InvalidOperationException(
+                        $"Trakt rejected the configured client_id (HTTP {(int)response.StatusCode}) -- " +
+                        "check the API application on trakt.tv/oauth/applications and re-enter its Client ID.");
+            }
             return response.IsSuccessStatusCode;
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

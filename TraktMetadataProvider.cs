@@ -70,21 +70,21 @@ public sealed class TraktMetadataProvider : IMetadataProvider
             MediaTypeName   = "movie",
             DefaultPriority = 10,
             SupportedFields = ["title", "overview", "year", "runtime_minutes",
-                               "genres", "cast", "directors", "rating"],
+                               "genres", "cast", "crew", "rating"],
         },
         new MediaTypeSupport
         {
             MediaTypeName   = "movies",
             DefaultPriority = 10,
             SupportedFields = ["title", "overview", "year", "runtime_minutes",
-                               "genres", "cast", "directors", "rating"],
+                               "genres", "cast", "crew", "rating"],
         },
         new MediaTypeSupport
         {
             MediaTypeName   = "tv",
             DefaultPriority = 10,
             SupportedFields = ["title", "overview", "year", "runtime_minutes",
-                               "genres", "cast", "directors", "rating"],
+                               "genres", "cast", "crew", "rating"],
         },
     ];
 
@@ -209,12 +209,13 @@ public sealed class TraktMetadataProvider : IMetadataProvider
             {
                 meta.Cast = people.Cast?
                     .Take(10)
-                    .Select(c => c.Person.Name)
+                    .Select(c => new CastMember(c.Person.Name, c.Character))
                     .ToList() ?? [];
-                meta.Directors = people.Crew?.Directing?
-                    .Where(d => d.Job?.Equals("Director", StringComparison.OrdinalIgnoreCase) == true)
-                    .Select(d => d.Person.Name)
-                    .ToList() ?? [];
+                meta.Crew = new[] { people.Crew?.Directing, people.Crew?.Writing, people.Crew?.Production }
+                    .Where(dept => dept is not null)
+                    .SelectMany(dept => dept!)
+                    .Select(c => new CrewMember(c.Person.Name, c.Job))
+                    .ToList();
             }
         }
         catch { /* people call is optional */ }
