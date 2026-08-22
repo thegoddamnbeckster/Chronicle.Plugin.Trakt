@@ -41,6 +41,12 @@ Fix Match accepts full Trakt URLs:
 
 ### Step 1 — Create a Trakt application
 
+> **Requires Trakt VIP.** As of 2026, Trakt gates creating a new API application behind a paid
+> VIP membership ("Creating new apps requires Trakt VIP" on the applications page) — a free
+> account cannot obtain a Client ID at all, and this plugin cannot work around that; it's a
+> restriction on Trakt's own platform, not something Chronicle can bypass. If you don't already
+> have a registered application from before this changed, you'll need Trakt VIP to create one.
+
 1. Go to [trakt.tv/oauth/applications](https://trakt.tv/oauth/applications) and click **New Application**.
 2. Give it a name (e.g. "Chronicle") and set the redirect URI to `urn:ietf:wg:oauth:2.0:oob`.
 3. Note your **Client ID** and **Client Secret**.
@@ -53,7 +59,7 @@ Fix Match accepts full Trakt URLs:
 
 ### Step 3 — Authenticate
 
-1. In Chronicle → **Settings → Import → Trakt**, click **Start Authentication**.
+1. In Chronicle → **Plugins**, open Trakt's **Configure** panel and click **Connect Account**.
 2. Chronicle will display a short code and a URL.
 3. Visit [trakt.tv/activate](https://trakt.tv/activate), sign in, and enter the code.
 4. Chronicle polls for confirmation and stores your access token automatically.
