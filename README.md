@@ -84,9 +84,14 @@ During import, Chronicle:
 
 ## Rate Limiting
 
-Trakt allows 1,000 API calls per 5-minute window. The plugin reads the `X-RateLimit-Remaining` response header on every call. If it reaches zero, the plugin automatically sleeps until the window resets before continuing — imports never fail due to rate limiting.
+Trakt allows 1,000 API calls per 5-minute window — a rolling window that resets continuously,
+not a daily cap.
 
-HTTP 429 responses with a `Retry-After` header are also handled with automatic backoff.
+HTTP 429 responses are handled reactively: the plugin honors the `Retry-After` header and
+retries, bounded to 5 attempts per page (`MaxRetriesPerPage` in `TraktClient.cs`) before giving
+up on that sync run — this replaced an earlier unbounded retry loop that could retry the same
+page forever under sustained 429s. This is *not* proactive `X-RateLimit-Remaining` tracking with
+a sleep-until-reset — the client doesn't read that header today; it only reacts to an actual 429.
 
 ---
 

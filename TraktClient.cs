@@ -15,6 +15,18 @@ internal sealed class TraktClient : IDisposable
     private const string BaseUrl  = "https://api.trakt.tv";
     private const int    PageSize = 500;
 
+    /// <summary>
+    /// GetWatchHistoryAsync/GetRatingsAsync/GetWatchlistAsync previously retried a rate-limited
+    /// page with no attempt cap at all — under sustained 429s they'd retry the same page
+    /// forever. Trakt's real limit (per README.md) is a rolling 1,000-calls-per-5-minutes
+    /// bucket that resets continuously, not a SIMKL-style daily quota, so the fix here is a
+    /// bounded retry count honoring each response's own Retry-After, not a multi-hour cutoff —
+    /// there's no daily-exhaustion condition to detect. 5 attempts, each waiting out a real
+    /// Retry-After, is generous enough to ride out a genuine rolling-window squeeze while still
+    /// eventually giving up on something more persistent (e.g. an account-level suspension).
+    /// </summary>
+    private const int MaxRetriesPerPage = 5;
+
     private static readonly ILogger _log = Log.ForContext<TraktClient>();
 
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -202,6 +214,7 @@ internal sealed class TraktClient : IDisposable
         var all      = new List<TraktHistoryItem>();
         var page     = 1;
         var pageCount = 1;
+        var retriesForCurrentPage = 0;
 
         do
         {
@@ -216,9 +229,15 @@ internal sealed class TraktClient : IDisposable
             {
                 if ((int)response.StatusCode == 429)
                 {
+                    if (++retriesForCurrentPage > MaxRetriesPerPage)
+                    {
+                        _log.Warning("Trakt: giving up on history page {Page} after {Count} consecutive 429s",
+                            page, retriesForCurrentPage - 1);
+                        break;
+                    }
                     var wait = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(30);
-                    _log.Warning("Trakt rate-limited on history (page {Page}); waiting {Seconds}s",
-                        page, (int)wait.TotalSeconds);
+                    _log.Warning("Trakt rate-limited on history (page {Page}, attempt {Attempt}/{Max}); waiting {Seconds}s",
+                        page, retriesForCurrentPage, MaxRetriesPerPage, (int)wait.TotalSeconds);
                     await Task.Delay(wait, ct);
                     continue;   // retry same page
                 }
@@ -226,6 +245,8 @@ internal sealed class TraktClient : IDisposable
                     (int)response.StatusCode, page);
                 break;
             }
+
+            retriesForCurrentPage = 0;
 
             if (page == 1)
                 pageCount = ReadPageCount(response);
@@ -255,6 +276,7 @@ internal sealed class TraktClient : IDisposable
         var all      = new List<TraktRatingItem>();
         var page     = 1;
         var pageCount = 1;
+        var retriesForCurrentPage = 0;
 
         do
         {
@@ -265,9 +287,15 @@ internal sealed class TraktClient : IDisposable
             {
                 if ((int)response.StatusCode == 429)
                 {
+                    if (++retriesForCurrentPage > MaxRetriesPerPage)
+                    {
+                        _log.Warning("Trakt: giving up on ratings page {Page} after {Count} consecutive 429s",
+                            page, retriesForCurrentPage - 1);
+                        break;
+                    }
                     var wait = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(30);
-                    _log.Warning("Trakt rate-limited on ratings (page {Page}); waiting {Seconds}s",
-                        page, (int)wait.TotalSeconds);
+                    _log.Warning("Trakt rate-limited on ratings (page {Page}, attempt {Attempt}/{Max}); waiting {Seconds}s",
+                        page, retriesForCurrentPage, MaxRetriesPerPage, (int)wait.TotalSeconds);
                     await Task.Delay(wait, ct);
                     continue;
                 }
@@ -275,6 +303,8 @@ internal sealed class TraktClient : IDisposable
                     (int)response.StatusCode, page);
                 break;
             }
+
+            retriesForCurrentPage = 0;
 
             if (page == 1)
                 pageCount = ReadPageCount(response);
@@ -299,6 +329,7 @@ internal sealed class TraktClient : IDisposable
         var all      = new List<TraktWatchlistItem>();
         var page     = 1;
         var pageCount = 1;
+        var retriesForCurrentPage = 0;
 
         do
         {
@@ -309,9 +340,15 @@ internal sealed class TraktClient : IDisposable
             {
                 if ((int)response.StatusCode == 429)
                 {
+                    if (++retriesForCurrentPage > MaxRetriesPerPage)
+                    {
+                        _log.Warning("Trakt: giving up on watchlist page {Page} after {Count} consecutive 429s",
+                            page, retriesForCurrentPage - 1);
+                        break;
+                    }
                     var wait = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(30);
-                    _log.Warning("Trakt rate-limited on watchlist (page {Page}); waiting {Seconds}s",
-                        page, (int)wait.TotalSeconds);
+                    _log.Warning("Trakt rate-limited on watchlist (page {Page}, attempt {Attempt}/{Max}); waiting {Seconds}s",
+                        page, retriesForCurrentPage, MaxRetriesPerPage, (int)wait.TotalSeconds);
                     await Task.Delay(wait, ct);
                     continue;
                 }
@@ -319,6 +356,8 @@ internal sealed class TraktClient : IDisposable
                     (int)response.StatusCode, page);
                 break;
             }
+
+            retriesForCurrentPage = 0;
 
             if (page == 1)
                 pageCount = ReadPageCount(response);
