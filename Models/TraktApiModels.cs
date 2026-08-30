@@ -81,6 +81,19 @@ internal record TraktWatchlistItem(
     [property: JsonPropertyName("movie")]     TraktMovie?    Movie,
     [property: JsonPropertyName("show")]      TraktShow?     Show);
 
+// ── Playback progress ────────────────────────────────────────────────────────
+
+/// <summary>One in-progress (not yet finished) item from GET /sync/playback/{movies,episodes}
+/// -- distinct from history, which only ever reports completed watches. Progress is 0-100.</summary>
+internal record TraktPlaybackItem(
+    [property: JsonPropertyName("id")]        long           Id,
+    [property: JsonPropertyName("progress")]  double         Progress,
+    [property: JsonPropertyName("paused_at")] DateTimeOffset PausedAt,
+    [property: JsonPropertyName("type")]      string         Type,
+    [property: JsonPropertyName("movie")]     TraktMovie?    Movie,
+    [property: JsonPropertyName("show")]      TraktShow?     Show,
+    [property: JsonPropertyName("episode")]   TraktEpisode?  Episode);
+
 // ── Search results ────────────────────────────────────────────────────────────
 
 internal record TraktSearchMovie(

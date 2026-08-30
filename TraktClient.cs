@@ -375,6 +375,76 @@ internal sealed class TraktClient : IDisposable
         return all;
     }
 
+    /// <summary>
+    /// GET /sync/playback/movies + /sync/playback/episodes -- in-progress (not yet finished)
+    /// playback positions, distinct from GetWatchHistoryAsync's completed-watch history.
+    /// Neither endpoint paginates (Trakt returns the whole list in one response, no
+    /// X-Pagination-* headers -- ReadPageCount's own default-to-1 fallback handles that
+    /// transparently, so this reuses the identical page-loop shape as GetRatingsAsync/
+    /// GetWatchlistAsync purely for consistency, not because it actually loops more than once
+    /// in practice).
+    /// </summary>
+    public async Task<List<TraktPlaybackItem>> GetPlaybackProgressAsync(CancellationToken ct)
+    {
+        var movies   = await GetPlaybackTypeAsync("movies", ct);
+        var episodes = await GetPlaybackTypeAsync("episodes", ct);
+        movies.AddRange(episodes);
+        return movies;
+    }
+
+    private async Task<List<TraktPlaybackItem>> GetPlaybackTypeAsync(string type, CancellationToken ct)
+    {
+        await EnsureTokenAsync(ct);
+
+        var all      = new List<TraktPlaybackItem>();
+        var page     = 1;
+        var pageCount = 1;
+        var retriesForCurrentPage = 0;
+
+        do
+        {
+            using var req      = AuthGet($"/sync/playback/{type}?limit={PageSize}&page={page}");
+            using var response = await _http.SendAsync(req, ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                if ((int)response.StatusCode == 429)
+                {
+                    if (++retriesForCurrentPage > MaxRetriesPerPage)
+                    {
+                        _log.Warning("Trakt: giving up on playback/{Type} page {Page} after {Count} consecutive 429s",
+                            type, page, retriesForCurrentPage - 1);
+                        break;
+                    }
+                    var wait = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(30);
+                    _log.Warning("Trakt rate-limited on playback/{Type} (page {Page}, attempt {Attempt}/{Max}); waiting {Seconds}s",
+                        type, page, retriesForCurrentPage, MaxRetriesPerPage, (int)wait.TotalSeconds);
+                    await Task.Delay(wait, ct);
+                    continue;
+                }
+                _log.Warning("Trakt GetPlaybackProgress failed: {Status} (type={Type}, page {Page})",
+                    (int)response.StatusCode, type, page);
+                break;
+            }
+
+            retriesForCurrentPage = 0;
+
+            if (page == 1)
+                pageCount = ReadPageCount(response);
+
+            var items = await response.Content
+                .ReadFromJsonAsync<List<TraktPlaybackItem>>(JsonOpts, ct);
+
+            if (items is null || items.Count == 0) break;
+            all.AddRange(items);
+            if (page < pageCount) await Task.Delay(100, ct);
+            page++;
+        }
+        while (page <= pageCount);
+
+        return all;
+    }
+
     private static int ReadPageCount(HttpResponseMessage response)
     {
         if (response.Headers.TryGetValues("X-Pagination-Page-Count", out var vals)

@@ -180,6 +180,13 @@ public sealed class TraktPlugin : IImportProvider, IDisposable
         return items.Select(ToWatchlistEntry).OfType<ImportedWatchlistEntry>().ToList();
     }
 
+    public async Task<List<ImportedPlaybackProgress>> GetPlaybackProgressAsync(CancellationToken ct = default)
+    {
+        EnsureConfigured();
+        var items = await _client!.GetPlaybackProgressAsync(ct);
+        return items.Select(ToPlaybackProgress).OfType<ImportedPlaybackProgress>().ToList();
+    }
+
     public Task<bool> HealthCheckAsync(CancellationToken ct = default)
     {
         if (_client is null) return Task.FromResult(false);
@@ -295,6 +302,45 @@ public sealed class TraktPlugin : IImportProvider, IDisposable
         }
 
         return null;   // Unknown type — skip silently.
+    }
+
+    /// <summary>Maps a GET /sync/playback/{movies,episodes} item -- Trakt never returns a
+    /// "show" type here (only individual movies/episodes can be in-progress).</summary>
+    private static ImportedPlaybackProgress? ToPlaybackProgress(TraktPlaybackItem item)
+    {
+        if (item.Type == "movie" && item.Movie is not null)
+        {
+            if (item.Movie.Ids.Trakt is not long movieTraktId) return null;
+            return new ImportedPlaybackProgress(
+                ExternalId:      $"trakt:movie:{movieTraktId}",
+                AdditionalIds:   BuildIds(item.Movie.Ids, "movie"),
+                MediaType:       "movie",
+                Title:           item.Movie.Title,
+                Year:            item.Movie.Year,
+                ProgressPercent: item.Progress,
+                UpdatedAt:       item.PausedAt);
+        }
+
+        if (item.Type == "episode" && item.Show is not null && item.Episode is not null)
+        {
+            var ep = item.Episode;
+            if (ep.Ids.Trakt is not long epTraktId) return null;
+            if (item.Show.Ids.Trakt is not long showTraktId) return null;
+            return new ImportedPlaybackProgress(
+                ExternalId:      $"trakt:episode:{epTraktId}",
+                AdditionalIds:   BuildIds(ep.Ids, "episode", item.Show.Ids),
+                MediaType:       "tv_episode",
+                Title:           FormatEpisodeTitle(item.Show.Title, ep),
+                Year:            item.Show.Year,
+                ProgressPercent: item.Progress,
+                UpdatedAt:       item.PausedAt,
+                ShowExternalId:  $"trakt:show:{showTraktId}",
+                ShowTitle:       item.Show.Title,
+                SeasonNumber:    ep.Season,
+                EpisodeNumber:   ep.Number);
+        }
+
+        return null;
     }
 
     private static ImportedRating? ToRating(TraktRatingItem item)
