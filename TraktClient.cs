@@ -59,8 +59,12 @@ internal sealed class TraktClient : IDisposable
         _http.DefaultRequestHeaders.TryAddWithoutValidation("trakt-api-key", clientId);
         _http.DefaultRequestHeaders.Accept
              .Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        // Root-caused live (2026-09-28): this used to disguise itself as a browser
+        // ("Mozilla/5.0 (compatible; ...)") instead of following Trakt's own suggested format
+        // ("We suggest using your app and version like MyAppName/1.0.0" -- docs.trakt.tv,
+        // Required Headers).
         _http.DefaultRequestHeaders.UserAgent
-             .ParseAdd("Mozilla/5.0 (compatible; Chronicle/1.0)");
+             .ParseAdd("Chronicle/1.0");
     }
 
     // ── Token management ─────────────────────────────────────────────────────
