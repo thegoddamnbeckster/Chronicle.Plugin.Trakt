@@ -84,14 +84,23 @@ During import, Chronicle:
 
 ## Rate Limiting
 
-Trakt allows 1,000 API calls per 5-minute window — a rolling window that resets continuously,
-not a daily cap.
+Trakt publishes separate limits for reads and writes (docs.trakt.tv, "Rate Limiting"):
+`AUTHED_API_GET_LIMIT` / `UNAUTHED_API_GET_LIMIT` — 1,000 GET calls per 5-minute rolling window
+that resets continuously (not a daily cap) — and `AUTHED_API_POST_LIMIT` — 1 POST/PUT/DELETE call
+per second.
 
-HTTP 429 responses are handled reactively: the plugin honors the `Retry-After` header and
-retries, bounded to 5 attempts per page (`MaxRetriesPerPage` in `TraktClient.cs`) before giving
-up on that sync run — this replaced an earlier unbounded retry loop that could retry the same
-page forever under sustained 429s. This is *not* proactive `X-RateLimit-Remaining` tracking with
-a sleep-until-reset — the client doesn't read that header today; it only reacts to an actual 429.
+`TraktRateLimiter` (`TraktRateLimiter.cs`) paces every outbound call proactively: a token bucket
+for GET calls kept at ~90% of the 1,000/5min budget, and a separate, independent bucket for
+write calls kept at ~90% of the 1/s budget. Every request — including the OAuth device-auth and
+token-refresh POSTs — goes through it before it's sent. When present, Trakt's own `X-Ratelimit`
+response header clamps the matching bucket down to what the server says is actually left.
+
+HTTP 429 responses are still handled reactively on top of that pacing: the plugin honors the
+`Retry-After` header and retries, bounded to 5 attempts per page (`MaxRetriesPerPage` in
+`TraktClient.cs`) before giving up on that sync run — this replaced an earlier unbounded retry
+loop that could retry the same page forever under sustained 429s. A 429 also pauses every other
+caller in that same category (GET or write) for the `Retry-After` duration, not just the caller
+that received it.
 
 ---
 
@@ -104,6 +113,7 @@ Chronicle.Plugin.Trakt/
 ├── TraktPlugin.cs             # Entry point — registers IMetadataProvider + IImportProvider
 ├── TraktMetadataProvider.cs   # IMetadataProvider: search, get by ID, Fix Match
 ├── TraktClient.cs             # HTTP client, auth, rate limiting
+├── TraktRateLimiter.cs        # Token-bucket pacing for GET and write calls
 └── Models/                    # API response models
 ```
 

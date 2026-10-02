@@ -24,6 +24,8 @@ internal sealed class TraktClient : IDisposable
     /// there's no daily-exhaustion condition to detect. 5 attempts, each waiting out a real
     /// Retry-After, is generous enough to ride out a genuine rolling-window squeeze while still
     /// eventually giving up on something more persistent (e.g. an account-level suspension).
+    /// This is now on top of <see cref="Limiter"/>'s proactive pacing (see TraktRateLimiter),
+    /// which keeps normal traffic well under the 429 threshold in the first place.
     /// </summary>
     private const int MaxRetriesPerPage = 5;
 
@@ -38,17 +40,21 @@ internal sealed class TraktClient : IDisposable
     private readonly string     _clientId;
     private readonly string     _clientSecret;
 
+    // Rate limiting lives in TraktRateLimiter (one shared instance: one account, one quota).
+    private readonly TraktRateLimiter Limiter;
+
     private string? _accessToken;
     private string? _refreshToken;
     private long    _tokenExpiresAt;   // Unix seconds
 
     // ── Construction ─────────────────────────────────────────────────────────
 
-    public TraktClient(string clientId, string clientSecret, HttpClient? httpClient = null)
+    public TraktClient(string clientId, string clientSecret, HttpClient? httpClient = null, TraktRateLimiter? limiter = null)
     {
         _clientId     = clientId;
         _clientSecret = clientSecret;
         _http         = httpClient ?? new HttpClient { BaseAddress = new Uri(BaseUrl) };
+        Limiter       = limiter ?? TraktRateLimiter.Shared;
 
         // TryAddWithoutValidation, not Add: Add() runs strict RFC-token validation on the
         // header VALUE for unknown/custom headers, and throws FormatException for content
@@ -92,6 +98,7 @@ internal sealed class TraktClient : IDisposable
 
     public async Task<DeviceCodeResponse> InitiateDeviceAuthAsync(CancellationToken ct)
     {
+        await Limiter.AcquireAsync(HttpMethod.Post, ct);
         var response = await _http.PostAsJsonAsync(
             "/oauth/device/code",
             new { client_id = _clientId },
@@ -114,6 +121,7 @@ internal sealed class TraktClient : IDisposable
     public async Task<(TokenResponse? Token, string Status)> PollForTokenAsync(
         string deviceCode, CancellationToken ct)
     {
+        await Limiter.AcquireAsync(HttpMethod.Post, ct);
         var response = await _http.PostAsJsonAsync(
             "/oauth/device/token",
             new
@@ -145,6 +153,7 @@ internal sealed class TraktClient : IDisposable
 
         try
         {
+            await Limiter.AcquireAsync(HttpMethod.Post, ct);
             var response = await _http.PostAsJsonAsync(
                 "/oauth/token",
                 new
@@ -226,8 +235,12 @@ internal sealed class TraktClient : IDisposable
                 ? $"/sync/history?limit={PageSize}&page={page}&start_at={Uri.EscapeDataString(since.Value.ToString("O"))}"
                 : $"/sync/history?limit={PageSize}&page={page}";
 
+            await Limiter.AcquireAsync(HttpMethod.Get, ct);
             using var req      = AuthGet(url);
             using var response = await _http.SendAsync(req, ct);
+
+            if (response.Headers.TryGetValues("X-Ratelimit", out var rlValues))
+                Limiter.Observe(HttpMethod.Get, rlValues);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -242,6 +255,7 @@ internal sealed class TraktClient : IDisposable
                     var wait = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(30);
                     _log.Warning("Trakt rate-limited on history (page {Page}, attempt {Attempt}/{Max}); waiting {Seconds}s",
                         page, retriesForCurrentPage, MaxRetriesPerPage, (int)wait.TotalSeconds);
+                    Limiter.NoteThrottled(HttpMethod.Get, wait + TimeSpan.FromSeconds(1));
                     await Task.Delay(wait, ct);
                     continue;   // retry same page
                 }
@@ -263,9 +277,6 @@ internal sealed class TraktClient : IDisposable
 
             all.AddRange(items);
 
-            if (page < pageCount)
-                await Task.Delay(100, ct);   // Be respectful of Trakt's rate limits.
-
             page++;
         }
         while (page <= pageCount);
@@ -284,8 +295,12 @@ internal sealed class TraktClient : IDisposable
 
         do
         {
+            await Limiter.AcquireAsync(HttpMethod.Get, ct);
             using var req      = AuthGet($"/sync/ratings?limit={PageSize}&page={page}");
             using var response = await _http.SendAsync(req, ct);
+
+            if (response.Headers.TryGetValues("X-Ratelimit", out var rlValues))
+                Limiter.Observe(HttpMethod.Get, rlValues);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -300,6 +315,7 @@ internal sealed class TraktClient : IDisposable
                     var wait = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(30);
                     _log.Warning("Trakt rate-limited on ratings (page {Page}, attempt {Attempt}/{Max}); waiting {Seconds}s",
                         page, retriesForCurrentPage, MaxRetriesPerPage, (int)wait.TotalSeconds);
+                    Limiter.NoteThrottled(HttpMethod.Get, wait + TimeSpan.FromSeconds(1));
                     await Task.Delay(wait, ct);
                     continue;
                 }
@@ -318,7 +334,6 @@ internal sealed class TraktClient : IDisposable
 
             if (items is null || items.Count == 0) break;
             all.AddRange(items);
-            if (page < pageCount) await Task.Delay(100, ct);
             page++;
         }
         while (page <= pageCount);
@@ -337,8 +352,12 @@ internal sealed class TraktClient : IDisposable
 
         do
         {
+            await Limiter.AcquireAsync(HttpMethod.Get, ct);
             using var req      = AuthGet($"/sync/watchlist?limit={PageSize}&page={page}");
             using var response = await _http.SendAsync(req, ct);
+
+            if (response.Headers.TryGetValues("X-Ratelimit", out var rlValues))
+                Limiter.Observe(HttpMethod.Get, rlValues);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -353,6 +372,7 @@ internal sealed class TraktClient : IDisposable
                     var wait = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(30);
                     _log.Warning("Trakt rate-limited on watchlist (page {Page}, attempt {Attempt}/{Max}); waiting {Seconds}s",
                         page, retriesForCurrentPage, MaxRetriesPerPage, (int)wait.TotalSeconds);
+                    Limiter.NoteThrottled(HttpMethod.Get, wait + TimeSpan.FromSeconds(1));
                     await Task.Delay(wait, ct);
                     continue;
                 }
@@ -371,7 +391,6 @@ internal sealed class TraktClient : IDisposable
 
             if (items is null || items.Count == 0) break;
             all.AddRange(items);
-            if (page < pageCount) await Task.Delay(100, ct);
             page++;
         }
         while (page <= pageCount);
@@ -407,8 +426,12 @@ internal sealed class TraktClient : IDisposable
 
         do
         {
+            await Limiter.AcquireAsync(HttpMethod.Get, ct);
             using var req      = AuthGet($"/sync/playback/{type}?limit={PageSize}&page={page}");
             using var response = await _http.SendAsync(req, ct);
+
+            if (response.Headers.TryGetValues("X-Ratelimit", out var rlValues))
+                Limiter.Observe(HttpMethod.Get, rlValues);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -423,6 +446,7 @@ internal sealed class TraktClient : IDisposable
                     var wait = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(30);
                     _log.Warning("Trakt rate-limited on playback/{Type} (page {Page}, attempt {Attempt}/{Max}); waiting {Seconds}s",
                         type, page, retriesForCurrentPage, MaxRetriesPerPage, (int)wait.TotalSeconds);
+                    Limiter.NoteThrottled(HttpMethod.Get, wait + TimeSpan.FromSeconds(1));
                     await Task.Delay(wait, ct);
                     continue;
                 }
@@ -441,7 +465,6 @@ internal sealed class TraktClient : IDisposable
 
             if (items is null || items.Count == 0) break;
             all.AddRange(items);
-            if (page < pageCount) await Task.Delay(100, ct);
             page++;
         }
         while (page <= pageCount);
@@ -466,8 +489,11 @@ internal sealed class TraktClient : IDisposable
         try
         {
             await EnsureTokenAsync(ct);
+            await Limiter.AcquireAsync(HttpMethod.Get, ct);
             using var req      = AuthGet("/users/me");
             using var response = await _http.SendAsync(req, ct);
+            if (response.Headers.TryGetValues("X-Ratelimit", out var rlValues))
+                Limiter.Observe(HttpMethod.Get, rlValues);
             return response.IsSuccessStatusCode;
         }
         catch
@@ -553,7 +579,12 @@ internal sealed class TraktClient : IDisposable
     {
         for (var attempt = 0; attempt < 2; attempt++)
         {
+            await Limiter.AcquireAsync(HttpMethod.Get, ct);
             var response = await _http.GetAsync(url, ct);
+
+            if (response.Headers.TryGetValues("X-Ratelimit", out var rlValues))
+                Limiter.Observe(HttpMethod.Get, rlValues);
+
             if (response.IsSuccessStatusCode)
                 return response;
 
@@ -562,6 +593,7 @@ internal sealed class TraktClient : IDisposable
                 var wait = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(30);
                 _log.Warning("Trakt rate-limited (429); waiting {Seconds}s before retry",
                     (int)wait.TotalSeconds);
+                Limiter.NoteThrottled(HttpMethod.Get, wait + TimeSpan.FromSeconds(1));
                 response.Dispose();
                 await Task.Delay(wait, ct);
                 continue;
@@ -577,7 +609,10 @@ internal sealed class TraktClient : IDisposable
     {
         try
         {
+            await Limiter.AcquireAsync(HttpMethod.Get, ct);
             using var response = await _http.GetAsync("/movies/trending", ct);
+            if (response.Headers.TryGetValues("X-Ratelimit", out var rlValues))
+                Limiter.Observe(HttpMethod.Get, rlValues);
             if (!response.IsSuccessStatusCode)
             {
                 _log.Warning("Trakt metadata health check failed: HTTP {Status} (client_id prefix: {Prefix})",
