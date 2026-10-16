@@ -10,11 +10,19 @@ namespace Chronicle.Plugin.Trakt;
 /// Supports Movies and TV Shows. Requires only a Client ID (no OAuth).
 /// Note: Trakt does not provide poster/backdrop images; use TMDB IDs from ExtendedData.
 /// </summary>
-public sealed class TraktMetadataProvider : IMetadataProvider
+public sealed class TraktMetadataProvider : IMetadataProvider, IExternalIdPolicyProvider
 {
     // ── Identity ──────────────────────────────────────────────────────────────
 
     public string PluginId => "chronicle.plugin.trakt";
+
+    /// <summary>A Trakt id in another provider's cross-reference block is a bare number: "trakt:movie:N" or "trakt:show:N".</summary>
+    public ExternalIdPolicy GetExternalIdPolicy() => new()
+    {
+        Source = "trakt",
+        CrossRefFormats = { ["movie"] = "trakt:movie:{id}", ["default"] = "trakt:show:{id}" },
+        CrossRefValueKinds = ["number"],
+    };
     public string Name     => "Trakt.tv";
     public string Version  => "1.1.0";
     public string Author   => "Chronicle Contributors";
