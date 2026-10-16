@@ -22,6 +22,7 @@ public sealed class TraktMetadataProvider : IMetadataProvider, IExternalIdPolicy
         Source = "trakt",
         CrossRefFormats = { ["movie"] = "trakt:movie:{id}", ["default"] = "trakt:show:{id}" },
         CrossRefValueKinds = ["number"],
+        FamilyIdPatterns = { ["movie"] = ":movie:" },
     };
     public string Name     => "Trakt.tv";
     public string Version  => "1.1.0";
