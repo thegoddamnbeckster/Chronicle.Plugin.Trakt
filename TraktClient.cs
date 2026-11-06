@@ -53,7 +53,7 @@ internal sealed class TraktClient : IDisposable
     {
         _clientId     = clientId;
         _clientSecret = clientSecret;
-        _http         = httpClient ?? new HttpClient { BaseAddress = new Uri(BaseUrl) };
+        _http         = httpClient ?? new HttpClient { BaseAddress = new Uri(BaseUrl), Timeout = TimeSpan.FromSeconds(20) };
         Limiter       = limiter ?? TraktRateLimiter.Shared;
 
         // TryAddWithoutValidation, not Add: Add() runs strict RFC-token validation on the
@@ -615,9 +615,9 @@ internal sealed class TraktClient : IDisposable
                 Limiter.Observe(HttpMethod.Get, rlValues);
             if (!response.IsSuccessStatusCode)
             {
-                _log.Warning("Trakt metadata health check failed: HTTP {Status} (client_id prefix: {Prefix})",
+                _log.Warning("Trakt metadata health check failed: HTTP {Status} ({Id})",
                     (int)response.StatusCode,
-                    _clientId.Length > 8 ? _clientId[..8] + "…" : "(empty)");
+                    _clientId.Length > 0 ? "client id set" : "no client id");
 
                 // /movies/trending needs no user OAuth -- only a valid client_id -- so a 401/403
                 // here means Trakt itself is rejecting the configured client_id (revoked, wrong,
@@ -626,13 +626,17 @@ internal sealed class TraktClient : IDisposable
                 // classifier surface that specific, actionable reason instead of the generic
                 // "Health check returned unhealthy." every other transient failure falls back to.
                 if ((int)response.StatusCode is 401 or 403)
-                    throw new InvalidOperationException(
+                    throw new Chronicle.Plugins.PluginAuthException("chronicle.plugin.trakt",
                         $"Trakt rejected the configured client_id (HTTP {(int)response.StatusCode}) -- " +
                         "check the API application on trakt.tv/oauth/applications and re-enter its Client ID.");
             }
             return response.IsSuccessStatusCode;
         }
         catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Chronicle.Plugins.PluginAuthException)
         {
             throw;
         }
