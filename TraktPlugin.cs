@@ -30,7 +30,7 @@ public sealed class TraktPlugin : IImportProvider, IDisposable
 
     public string PluginId    => "chronicle.plugin.trakt";
     public string Name        => "Trakt";
-    public string Version     => "1.1.0";
+    public string Version     => System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(typeof(TraktPlugin).Assembly)?.InformationalVersion.Split('+')[0] ?? "1.2.1";
     public string Author      => "thegoddamnbeckster";
     public string Description => "Import watch history, ratings, and watchlist from Trakt.tv.";
 

@@ -25,7 +25,7 @@ public sealed class TraktMetadataProvider : IMetadataProvider, IExternalIdPolicy
         FamilyIdPatterns = { ["movie"] = ":movie:" },
     };
     public string Name     => "Trakt.tv";
-    public string Version  => "1.1.0";
+    public string Version  => System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(typeof(TraktMetadataProvider).Assembly)?.InformationalVersion.Split('+')[0] ?? "1.2.1";
     public string Author   => "Chronicle Contributors";
 
     // ── State ─────────────────────────────────────────────────────────────────
@@ -234,8 +234,8 @@ public sealed class TraktMetadataProvider : IMetadataProvider, IExternalIdPolicy
 
     // ── Image proxy ───────────────────────────────────────────────────────────
 
-    public Task<byte[]> GetImageAsync(string url, CancellationToken ct = default) =>
-        _imageHttp.GetByteArrayAsync(url, ct);
+    public Task<byte[]> GetImageAsync(string url, CancellationToken ct = default)
+        => throw new NotSupportedException("Images are loaded by the browser straight from the address in the metadata; this plugin has nothing to fetch.");
 
     // ── Health check ──────────────────────────────────────────────────────────
 
