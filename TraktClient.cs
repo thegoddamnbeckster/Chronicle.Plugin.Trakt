@@ -599,6 +599,15 @@ internal sealed class TraktClient : IDisposable
                 continue;
             }
 
+            if ((int)response.StatusCode == 429)
+            {
+                // Still limited after the one wait: a pause for Chronicle's queue (the item is not "not found"), with how long Trakt asked.
+                var asked = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(30);
+                response.Dispose();
+                throw new HttpRequestException("Trakt is rate limiting requests", null, System.Net.HttpStatusCode.TooManyRequests)
+                    { Data = { ["RetryAfter"] = asked } };
+            }
+
             return response;
         }
 

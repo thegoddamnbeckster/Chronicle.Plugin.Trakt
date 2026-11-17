@@ -30,4 +30,29 @@ public class SecretProofTests
             Assert.DoesNotContain(Secret, ex.ToString());
         }
     }
+
+    [Fact]
+    public async Task A_rate_limit_that_does_not_clear_after_the_one_wait_is_a_pause_that_says_how_long_Trakt_asked()
+    {
+        var calls = 0;
+        var http = new HttpClient(new Limited(() => calls++)) { BaseAddress = new Uri("https://api.trakt.tv") };
+        var client = new TraktClient(Id, Secret, http, new TraktRateLimiter());
+
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(() => client.GetMovieAsync("tron", default));
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, ex.StatusCode);              // a pause for Chronicle's queue, not "not found"
+        Assert.Equal(TimeSpan.FromMilliseconds(1), ex.Data["RetryAfter"]);
+        Assert.Equal(2, calls);                                                    // one wait, one retry, then it says so
+    }
+
+    private sealed class Limited(Action count) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            count();
+            var r = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+            r.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromMilliseconds(1));
+            return Task.FromResult(r);
+        }
+    }
 }
