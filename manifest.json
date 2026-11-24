@@ -1,7 +1,7 @@
 {
   "plugin_id": "chronicle.plugin.trakt",
   "name": "Trakt",
-  "version": "1.2.3",
+  "version": "1.3.0",
   "author": "thegoddamnbeckster",
   "description": "Import watch history, ratings, watchlist, and in-progress playback position from Trakt.tv into Chronicle. Requires a Trakt API application (Settings → Your API Apps on trakt.tv) -- as of 2026, creating one requires a paid Trakt VIP membership, so a free account cannot obtain a client_id at all.",
   "min_chronicle_version": "0.6.0",
@@ -28,6 +28,15 @@
       "default_cron":    "0 2 * * *",
       "default_enabled": true,
       "schedulable":     true
+    }
+  ],
+  "rating_sources": [
+    {
+      "key": "trakt",
+      "display_name": "Trakt",
+      "stored_scale": 10,
+      "scale": 100,
+      "display": "percent"
     }
   ]
 }
